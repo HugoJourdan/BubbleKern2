@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>BBLH tester — OpenType.js (stable)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --bg-top: #0b0b0b;
+    --bg-bottom: #111;
+    --panel: #161616;
+    --muted: #999;
+    --canvas-bg: #040404;
+    --glyph-fill: #ffffff;
+  }
+  body.light {
+    --bg-top: #fbfbfb;
+    --bg-bottom: #f3f3f3;
+    --panel: #ffffff;
+    --muted: #444;
+    --canvas-bg: #ffffff;
+    --glyph-fill: #000000;
+  }
+
+  html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;color:var(--glyph-fill);
+    background:linear-gradient(180deg,var(--bg-top),var(--bg-bottom));}
+
+  .app { display:flex; flex-direction:column; height:100vh; }
+
+  header { padding:12px 16px; display:flex; gap:12px; align-items:center;
+    border-bottom:1px solid rgba(0,0,0,0.06); background:rgba(255,255,255,0.01); }
+  header h1 { margin:0;font-size:16px;font-weight:600 }
+  .panel { display:flex; gap:12px; padding:12px; height:calc(100vh - 104px); box-sizing:border-box; }
+  .left { width:360px; min-width:280px; max-width:420px; display:flex; flex-direction:column; gap:12px; }
+  .drop {
+    border: 1px dashed rgba(255,255,255,0.06);
+    padding:12px; height:120px; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); text-align:center; border-radius:6px; background:transparent;
+  }
+  .drop.dragover { border-color: #1e90ff; color:var(--glyph-fill); background:rgba(30,144,255,0.03); }
+
+  .small { font-size:13px; color:var(--muted); }
+  .input { display:flex; flex-direction:column; gap:6px; }
+
+  /* Multi-line editor that wraps */
+  .editor {
+    background:transparent;
+    border:1px solid rgba(0,0,0,0.06);
+    padding:8px;
+    min-height:96px;
+    border-radius:6px;
+    color:var(--glyph-fill);
+    outline:none;
+    resize:vertical;
+    white-space:pre-wrap;
+    word-wrap:break-word;
+    overflow:auto;
+    max-height:220px;
+  }
+
+  .right { flex:1; display:flex; flex-direction:column; gap:12px; min-width:0; }
+  canvas { border-radius:6px; width:100%; height:100%; display:block; background:var(--canvas-bg); color:rgba(128,250,40,1.0); }
+
+  .controls-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .control { display:flex; gap:8px; align-items:center; color:var(--muted); font-size:13px; }
+  label { font-size:13px; color:var(--muted) }
+  input[type="range"] { width:180px; }
+  .meta { font-size:12px; color:var(--muted) }
+  .footer { font-size:12px; color:var(--muted); padding:10px 16px; border-top:1px solid rgba(0,0,0,0.04); }
+  .status { font-size:13px; color:var(--muted) }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>BBLH tester — stable</h1>
+    <div style="margin-left:auto" id="fontName">No font loaded</div>
+  </header>
+
+  <div class="panel">
+    <div class="left">
+      <div id="dropZone" class="drop">
+        Drop OTF/TTF file here (or click to choose)
+        <div class="small">Font should contain a BBLH table (bubbles)</div>
+      </div>
+
+      <div class="input">
+        <label class="small">Editable text (multi-line, wraps)</label>
+        <div id="editor" class="editor" contenteditable="true">The quick brown fox jumps over the lazy dog
+This is a second line to test wrapping and multi-line rendering.</div>
+      </div>
+
+      <div class="controls-row">
+        <div class="control">
+          <label for="size">Size</label>
+          <input id="size" type="range" min="12" max="800" value="160">
+          <div class="small" id="sizeValue">160</div>
+        </div>
+
+        <div class="control">
+          <label for="bubblesOpacity">Bubbles opacity</label>
+          <input id="bubblesOpacity" type="range" min="0" max="100" value="80">
+          <div class="small" id="bubblesOpacityValue">80</div>
+        </div>
+
+        <div class="control">
+          <input id="useBubbles" type="checkbox" checked>
+          <label for="useBubbles">Use bubbles spacing</label>
+        </div>
+
+        <div class="control">
+          <input id="lightBg" type="checkbox">
+          <label for="lightBg">Light background</label>
+        </div>
+      </div>
+
+      <div class="small status" id="status">Waiting for font…</div>
+    </div>
+
+    <div class="right">
+      <canvas id="canvas"></canvas>
+      <div class="small meta">
+        The renderer reads BBLH from the font (two polylines per glyph = left/right bubbles). Lines are laid out with simple word-wrapping.
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="small">BBLH (bubbles) format: binary big-endian as produced by the Glyphs script. Two sets per glyph (set1 = left bubble, set2 = right bubble).</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/opentype.js/1.3.4/opentype.min.js"></script>
+<script>
+/* Stable index.html:
+   - Multi-line editor with wrapping
+   - Bubbles opacity slider
+   - Light/dark background toggle
+   - Ensures glyph fill is white in dark mode and black in light mode (fixed)
+*/
+
+const dropZone = document.getElementById('dropZone');
+const editor = document.getElementById('editor');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const statusEl = document.getElementById('status');
+const fontNameEl = document.getElementById('fontName');
+const sizeInput = document.getElementById('size');
+const sizeValue = document.getElementById('sizeValue');
+const bubblesOpacityInput = document.getElementById('bubblesOpacity');
+const bubblesOpacityValue = document.getElementById('bubblesOpacityValue');
+const useBubblesCheckbox = document.getElementById('useBubbles');
+const lightBgCheckbox = document.getElementById('lightBg');
+
+let loadedFont = null;
+let rawArrayBuffer = null;
+let bblhMap = {}; // glyphIndex -> { set1, set2 }
+let unitsPerEm = 1000;
+
+function setStatus(msg){ statusEl.textContent = msg; }
+function setFontName(s){ fontNameEl.textContent = s; }
+
+function resizeCanvas(){
+  const rect = canvas.parentElement.getBoundingClientRect();
+  canvas.width = Math.floor(window.devicePixelRatio * rect.width);
+  canvas.height = Math.floor(window.devicePixelRatio * Math.max(300, rect.height - 0));
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = Math.max(300, rect.height - 0) + 'px';
+  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+}
+window.addEventListener('resize', () => { resizeCanvas(); render(); });
+
+// file drag & click
+dropZone.addEventListener('click', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.otf,.ttf,.woff,.woff2';
+  inp.onchange = () => { if (inp.files && inp.files[0]) handleFile(inp.files[0]); };
+  inp.click();
+});
+dropZone.addEventListener('dragenter', (e)=>{ e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragover', (e)=>{ e.preventDefault(); });
+dropZone.addEventListener('dragleave', (e)=>{ e.preventDefault(); dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', (e)=> {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files && e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+
+function handleFile(file){
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    rawArrayBuffer = ev.target.result;
+    try {
+      loadedFont = opentype.parse(rawArrayBuffer);
+      unitsPerEm = loadedFont.unitsPerEm || 1000;
+      setFontName(`${file.name} — ${loadedFont.names && loadedFont.names.fullName ? (loadedFont.names.fullName.en || "") : ""}`);
+      setStatus('Font loaded. Parsing BBLH...');
+      bblhMap = parseBBLH(rawArrayBuffer);
+      setStatus(Object.keys(bblhMap).length ? 'BBLH parsed.' : 'No BBLH table found — falling back to advances.');
+      render();
+    } catch (err) {
+      console.error(err);
+      setStatus('Failed to load font: ' + (err && err.message ? err.message : err));
+    }
+  };
+  reader.onerror = (err) => { setStatus('Failed to read file: ' + err); };
+  reader.readAsArrayBuffer(file);
+}
+
+// parse BBLH table (big-endian) from SFNT table directory
+function parseBBLH(arrayBuffer){
+  const map = {};
+  if (!arrayBuffer) return map;
+  const dv = new DataView(arrayBuffer);
+  if (dv.byteLength < 12) return map;
+  const numTables = dv.getUint16(4, false);
+  let recordOffset = 12;
+  let found = false;
+  let tableOffset=0, tableLength=0;
+  for (let i=0;i<numTables;i++){
+    const tag = String.fromCharCode(
+      dv.getUint8(recordOffset+0),
+      dv.getUint8(recordOffset+1),
+      dv.getUint8(recordOffset+2),
+      dv.getUint8(recordOffset+3)
+    );
+    const offset = dv.getUint32(recordOffset+8, false);
+    const length = dv.getUint32(recordOffset+12, false);
+    if (tag === 'BBLH'){ found = true; tableOffset = offset; tableLength = length; break; }
+    recordOffset += 16;
+  }
+  if (!found) return map;
+
+  let pos = tableOffset;
+  const end = tableOffset + tableLength;
+  const ensure = n => pos + n <= end;
+  if (!ensure(6)) return map;
+  const version = dv.getUint16(pos, false); pos += 2;
+  const glyphCount = dv.getUint32(pos, false); pos += 4;
+
+  for (let gi=0; gi<glyphCount && ensure(1); gi++){
+    const presence = dv.getUint8(pos, false); pos += 1;
+    if (presence === 0){ map[gi] = null; continue; }
+    if (!ensure(2)){ console.warn('truncated n1'); break; }
+    const n1 = dv.getUint16(pos, false); pos += 2;
+    const set1 = [];
+    for (let i=0;i<n1;i++){
+      if (!ensure(8)){ console.warn('trunc set1'); break; }
+      const x = dv.getInt32(pos, false); pos += 4;
+      const y = dv.getInt32(pos, false); pos += 4;
+      set1.push([x,y]);
+    }
+    if (!ensure(2)){ console.warn('truncated n2'); break; }
+    const n2 = dv.getUint16(pos, false); pos += 2;
+    const set2 = [];
+    for (let i=0;i<n2;i++){
+      if (!ensure(8)){ console.warn('trunc set2'); break; }
+      const x = dv.getInt32(pos, false); pos += 4;
+      const y = dv.getInt32(pos, false); pos += 4;
+      set2.push([x,y]);
+    }
+    // ensure sorted by Y ascending
+    set1.sort((a,b)=>a[1]-b[1]);
+    set2.sort((a,b)=>a[1]-b[1]);
+    map[gi] = { set1, set2 };
+  }
+  return map;
+}
+
+// linear interpolation helper
+function xAtY(poly, y){
+  if (!poly || poly.length===0) return null;
+  if (poly.length===1) return poly[0][0];
+  if (y <= poly[0][1]){
+    const [x0,y0]=poly[0], [x1,y1]=poly[1];
+    if (y1===y0) return x0;
+    const t=(y-y0)/(y1-y0); return x0 + t*(x1-x0);
+  }
+  const n=poly.length;
+  if (y >= poly[n-1][1]){
+    const [x0,y0]=poly[n-2], [x1,y1]=poly[n-1];
+    if (y1===y0) return x1;
+    const t=(y-y0)/(y1-y0); return x0 + t*(x1-x0);
+  }
+  for (let i=0;i<poly.length-1;i++){
+    const [x0,y0]=poly[i], [x1,y1]=poly[i+1];
+    if (y0<=y && y<=y1){
+      if (y1===y0) return x0;
+      const t=(y-y0)/(y1-y0); return x0 + t*(x1-x0);
+    }
+  }
+  return null;
+}
+
+// compute bubble offset (units) so leftGlyph.rightBubble and rightGlyph.leftBubble touch
+function computeBubbleOffset(leftSets, rightSets){
+  const leftRight = leftSets && leftSets.set2 ? leftSets.set2 : null;
+  const rightLeft = rightSets && rightSets.set1 ? rightSets.set1 : null;
+  if (!leftRight || !rightLeft) return null;
+  const ys = new Set();
+  leftRight.forEach(p=>ys.add(p[1])); rightLeft.forEach(p=>ys.add(p[1]));
+  ys.add(leftRight[0][1]); ys.add(leftRight[leftRight.length-1][1]);
+  ys.add(rightLeft[0][1]); ys.add(rightLeft[rightLeft.length-1][1]);
+  const yarr = Array.from(ys).sort((a,b)=>a-b);
+  let maxDiff = -Infinity;
+  for (const y of yarr){
+    const xL = xAtY(leftRight,y), xR = xAtY(rightLeft,y);
+    if (xL===null || xR===null) continue;
+    const diff = xL - xR;
+    if (diff > maxDiff) maxDiff = diff;
+  }
+  return isFinite(maxDiff) ? maxDiff : null;
+}
+
+function drawPolyline(ctx, poly, xOffsetPx, baselineY, scale){
+  if (!poly || poly.length===0) return;
+  for (let i=0;i<poly.length;i++){
+    const [x,y]=poly[i];
+    const px = x*scale + xOffsetPx;
+    const py = baselineY - y*scale;
+    if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+}
+
+/* Word-wrap and render:
+   - respects explicit newlines
+   - wraps on spaces, breaks long words at glyph boundaries
+*/
+function render(){
+  resizeCanvas();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // background
+  const css = getComputedStyle(document.body);
+  const canvasBg = css.getPropertyValue('--canvas-bg') || '#040404';
+  ctx.fillStyle = canvasBg.trim();
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  if (!loadedFont){
+    setStatus('No font loaded');
+    return;
+  }
+
+  // ensure body class matches checkbox
+  if (lightBgCheckbox.checked) document.body.classList.add('light'); else document.body.classList.remove('light');
+
+  const text = editor.innerText || editor.textContent || '';
+  const useBubbles = useBubblesCheckbox.checked;
+  const bubbleOpacity = Math.max(0, Math.min(1, (parseFloat(bubblesOpacityInput.value)||80)/100));
+  bubblesOpacityValue.textContent = Math.round(bubbleOpacity*100);
+  const fontSize = parseFloat(sizeInput.value) || 160;
+  sizeValue.textContent = fontSize;
+
+  const scale = fontSize / (unitsPerEm || 1000);
+  const rect = canvas.getBoundingClientRect();
+  const leftMarginPx = 24, rightMarginPx = 24;
+  const availablePx = rect.width - leftMarginPx - rightMarginPx;
+  const availableUnits = availablePx / scale;
+  const leftMarginUnits = leftMarginPx / scale;
+  const lineHeightUnits = unitsPerEm * 1.2;
+  const lineHeightPx = lineHeightUnits * scale;
+  const topBaselinePx = Math.floor(0.12 * rect.height) + fontSize; // keep a top margin
+
+  // split paragraphs
+  const paragraphs = text.split(/\r?\n/);
+
+  // collect lines
+  const lines = [];
+  const spaceGlyph = loadedFont.charToGlyph(' ');
+  const spaceWidth = spaceGlyph ? (spaceGlyph.advanceWidth || unitsPerEm*0.25) : unitsPerEm*0.25;
+
+  for (let p=0;p<paragraphs.length;p++){
+    const para = paragraphs[p];
+    const words = para.split(/\s+/);
+    let curGlyphs = [], curPositions = [], curX = 0, firstWord=true;
+    if (words.length===0 || (words.length===1 && words[0]==='')){
+      lines.push({glyphs:[], positions:[], width:0});
+      continue;
+    }
+    for (let wI=0; wI<words.length; wI++){
+      const word = words[wI];
+      if (word.length===0) { // multiple spaces collapse
+        if (!firstWord) { curX += spaceWidth; }
+        continue;
+      }
+      const garr = loadedFont.stringToGlyphs(word);
+      let wordWidth = 0; for (const gg of garr) wordWidth += (gg.advanceWidth || unitsPerEm);
+      const needSpace = firstWord ? 0 : spaceWidth;
+      if ((curX + needSpace + wordWidth) <= availableUnits || firstWord && (wordWidth <= availableUnits)){
+        if (!firstWord) curX += spaceWidth;
+        for (const gg of garr){
+          curGlyphs.push(gg);
+          curPositions.push(curX);
+          curX += (gg.advanceWidth || unitsPerEm);
+        }
+        firstWord=false;
+      } else {
+        // push current
+        lines.push({glyphs:curGlyphs.slice(), positions:curPositions.slice(), width:curX});
+        // start new line
+        curGlyphs = []; curPositions=[]; curX = 0; firstWord=true;
+        // if word itself too long, break at glyph boundaries
+        if (wordWidth > availableUnits){
+          for (const gg of garr){
+            if (curX + (gg.advanceWidth || unitsPerEm) > availableUnits && curGlyphs.length>0){
+              lines.push({glyphs:curGlyphs.slice(), positions:curPositions.slice(), width:curX});
+              curGlyphs=[]; curPositions=[]; curX=0;
+            }
+            curGlyphs.push(gg); curPositions.push(curX);
+            curX += (gg.advanceWidth || unitsPerEm); firstWord=false;
+          }
+        } else {
+          for (const gg of garr){
+            curGlyphs.push(gg); curPositions.push(curX);
+            curX += (gg.advanceWidth || unitsPerEm);
+          }
+          firstWord=false;
+        }
+      }
+    } // words
+    lines.push({glyphs:curGlyphs.slice(), positions:curPositions.slice(), width:curX});
+    // paragraph break: push an empty line except after last paragraph
+    if (p < paragraphs.length - 1) lines.push({glyphs:[], positions:[], width:0});
+  }
+
+  // compute final positions per line using bubbles (if enabled)
+  const allLineData = [];
+  for (let li=0; li<lines.length; li++){
+    const L = lines[li];
+    const glyphs = L.glyphs;
+    if (!glyphs || glyphs.length===0){
+      allLineData.push({glyphs:[], finalPos:[]});
+      continue;
+    }
+    let cursorUnits = leftMarginUnits;
+    const finalPos = [];
+    for (let gi=0; gi<glyphs.length; gi++){
+      finalPos.push(cursorUnits);
+      if (gi < glyphs.length - 1){
+        let advanceUnits = glyphs[gi].advanceWidth || unitsPerEm;
+        if (useBubbles && bblhMap && Object.keys(bblhMap).length>0){
+          const leftSets = bblhMap[glyphs[gi].index] !== undefined ? bblhMap[glyphs[gi].index] : null;
+          const rightSets = bblhMap[glyphs[gi+1].index] !== undefined ? bblhMap[glyphs[gi+1].index] : null;
+          const off = computeBubbleOffset(leftSets, rightSets);
+          if (off !== null) advanceUnits = off;
+        }
+        cursorUnits += advanceUnits;
+      } else {
+        cursorUnits += glyphs[gi].advanceWidth || unitsPerEm;
+      }
+    }
+    allLineData.push({glyphs, finalPos});
+  }
+
+  // draw bubbles (behind)
+  const alpha = Math.max(0, Math.min(1, (parseFloat(bubblesOpacityInput.value)||80)/100));
+  for (let li=0; li<allLineData.length; li++){
+    const baselineY = topBaselinePx + li * lineHeightPx;
+    const data = allLineData[li];
+    if (!data || !data.glyphs || data.glyphs.length===0) continue;
+    for (let gi=0; gi<data.glyphs.length; gi++){
+      const g = data.glyphs[gi];
+      const xUnits = data.finalPos[gi];
+      const xPx = xUnits * scale;
+      const sets = (bblhMap && bblhMap[g.index] !== undefined) ? bblhMap[g.index] : null;
+      if (alpha > 0 && sets && sets.set1 && sets.set2){
+        ctx.save();
+        ctx.lineWidth = Math.max(1, Math.round(fontSize/200));
+        ctx.strokeStyle = `rgba(30,144,255,${0.9*alpha})`;
+        ctx.beginPath(); drawPolyline(ctx, sets.set1, xPx, baselineY, scale); ctx.stroke();
+        ctx.strokeStyle = `rgba(255,99,71,${0.95*alpha})`;
+        ctx.beginPath(); drawPolyline(ctx, sets.set2, xPx, baselineY, scale); ctx.stroke();
+        ctx.fillStyle = `rgba(200,200,200,${0.18*alpha})`;
+        for (const [x,y] of sets.set1){ const px=x*scale + xPx, py=baselineY - y*scale; ctx.fillRect(px-1.5,py-1.5,3,3); }
+        for (const [x,y] of sets.set2){ const px=x*scale + xPx, py=baselineY - y*scale; ctx.fillRect(px-1.5,py-1.5,3,3); }
+        ctx.restore();
+      }
+    }
+  }
+
+  // glyph fill color: derive from body class (ensures white on dark, black on light)
+  const isLight = document.body.classList.contains('light');
+  const glyphFill = isLight ? '#000000' : '#ffffff';
+
+  // draw glyphs on top
+  for (let li=0; li<allLineData.length; li++){
+    const baselineY = topBaselinePx + li * lineHeightPx;
+    const data = allLineData[li];
+    if (!data || !data.glyphs) continue;
+    for (let gi=0; gi<data.glyphs.length; gi++){
+      const g = data.glyphs[gi];
+      const xUnits = data.finalPos[gi];
+      const xPx = xUnits * scale;
+      const path = g.getPath(xPx, baselineY, fontSize);
+      ctx.save();
+      ctx.fillStyle = glyphFill;
+      ctx.strokeStyle = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = Math.max(0.6, Math.round(fontSize/200));
+      path.draw(ctx);
+      ctx.restore();
+    }
+  }
+
+  setStatus('Rendered — lines: ' + allLineData.length + (Object.keys(bblhMap).length ? ' — BBLH present' : ' — no BBLH'));
+}
+
+/* events */
+editor.addEventListener('input', () => { render(); });
+sizeInput.addEventListener('input', () => { render(); });
+bubblesOpacityInput.addEventListener('input', () => { render(); });
+useBubblesCheckbox.addEventListener('change', () => { render(); });
+lightBgCheckbox.addEventListener('change', () => { // toggle body class immediately for instant CSS update
+  if (lightBgCheckbox.checked) document.body.classList.add('light');
+  else document.body.classList.remove('light');
+  render();
+});
+
+// initial
+resizeCanvas();
+render();
+</script>
+</body>
+</html>
