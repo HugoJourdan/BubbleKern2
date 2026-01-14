@@ -1,17 +1,18 @@
 from __future__ import division, print_function, unicode_literals
 
 import objc
-from GlyphsApp import *
+from GlyphsApp import Glyphs, EDIT_MENU
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
 
-from AppKit import (NSMenuItem,
-	NSImage, # for setting plus and minus button image
-	NSFont, # for setting preview in Menlo
-	NSDragOperationMove, # currently useless
+from AppKit import (
+	NSMenuItem,
+	NSImage,  # for setting plus and minus button image
+	NSFont,  # for setting preview in Menlo
+	NSDragOperationMove,  # currently useless
 	NSFloatingWindowLevel,
-	)
+)
 
 # PLUGIN WITH A WINDOW UNDER EDIT TOOL
 # 1. GENERATES PRE-COMPUTED KERNING DATA (MOST COMMON USE CASE)
@@ -33,6 +34,7 @@ Menlo12 = NSFont.fontWithName_size_("Menlo", 12)
 toolOrderDragType = "toolOrderDragType"
 
 class BubbleKernKerner(GeneralPlugin):
+	name: str
 
 	@objc.python_method
 	def settings(self):
@@ -42,32 +44,34 @@ class BubbleKernKerner(GeneralPlugin):
 		})
 
 	@objc.python_method
-	def start(self): # STUFF TO UPON GLYPHS STARTUP
-		newMenuItem = NSMenuItem(self.name, self.showWindow_, target=self)
+	def start(self):  # STUFF TO UPON GLYPHS STARTUP
+		newMenuItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(self.name, self.showWindow_, "")
+		newMenuItem.setTarget_(self)
 		Glyphs.menu[EDIT_MENU].append(newMenuItem)
 
-		self.font = Glyphs.font # allows the plugin to stick to the initially given font
+		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
 
-		self.w = vanilla.Window((230, 500),
+		self.w = vanilla.Window(
+			(230, 500),
 			# minSize=(200, 300),
 			# maxSize=(230, 2000),
 			title='BubbleKern Kerner',
-			autosaveName = "com.Tosche.BubbleKernKerner.mainwindow" # stores last window position and size
-			)
+			autosaveName="com.Tosche.BubbleKernKerner.mainwindow"  # stores last window position and size
+		)
 
-		self.w._window.setLevel_(NSFloatingWindowLevel) # MAKE WINDOW FLOAT
+		self.w._window.setLevel_(NSFloatingWindowLevel)  # MAKE WINDOW FLOAT
 		windowNS = self.w.getNSWindow()
-		windowNS.setHidesOnDeactivate_(True) # MAKE WINDOW HIDE WHILE IN BACKGROUND
+		windowNS.setHidesOnDeactivate_(True)  # MAKE WINDOW HIDE WHILE IN BACKGROUND
 
 		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts", "Remove Bubbles"])
 
 		# GENERATE KERNING TAB
-		tab0 = self.w.tabs[0] # STANDARD KERNIG GENERATION
-		tab0.group0 = vanilla.Group('auto') # TABLES TO MAKE AUTO LAYOUT EASIER
-		tab0.group1 = vanilla.Group('auto') # BUTTONS
-		tab0.group0.options = vanilla.PopUpButton('auto', tab0options, callback=self.optionTasks) # POPUP MENU
+		tab0 = self.w.tabs[0]  # STANDARD KERNIG GENERATION
+		tab0.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
+		tab0.group1 = vanilla.Group('auto')  # BUTTONS
+		tab0.group0.options = vanilla.PopUpButton('auto', tab0options, callback=self.optionTasks)  # POPUP MENU
 		tab0.group0.options._nsObject.menu().setAutoenablesItems_(False)
-		emptyPermutation = [{"Left": "", "Right": "", "Add Flipped": "", "Pairs": "0"}] # TITLE
+		emptyPermutation = [{"Left": "", "Right": "", "Add Flipped": "", "Pairs": "0"}]  # TITLE
 		spX = 10
 		prevX = 180
 		GroupColumnWidth = int((self.w.getPosSize()[2] - 180 - spX * 5 - prevX) / 2 + 1)
@@ -84,7 +88,7 @@ class BubbleKernKerner(GeneralPlugin):
 				},
 				{"title": "Pair Count", "width": 90},
 			],
-			# 	dragSettings = dict( type=NSString, callback=self.dragCallback ), # WHY DOES THIS THING NOT WORK?
+			#  dragSettings = dict( type=NSString, callback=self.dragCallback ), # WHY DOES THIS THING NOT WORK?
 			selfDropSettings=dict(
 				type=toolOrderDragType,
 				operation=NSDragOperationMove,
@@ -108,7 +112,7 @@ class BubbleKernKerner(GeneralPlugin):
 		# setColumnAutoresizingStyle accepts value from 0 to 5.
 		# For detail,see: http://api.monobjc.net/html/T_Monobjc_AppKit_NSTableViewColumnAutoresizingStyle.htm
 
-		tab0.group0.sectionPreviewCaption = vanilla.TextBox('auto', "Section Preview",sizeStyle="small")
+		tab0.group0.sectionPreviewCaption = vanilla.TextBox('auto', "Section Preview", sizeStyle="small")
 		tab0.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
 		tab0.group0.preview._textView.setFont_(Menlo12)
 		tab0.group0.total = vanilla.TextBox('auto', "", sizeStyle="small")
@@ -129,27 +133,27 @@ class BubbleKernKerner(GeneralPlugin):
 			'V:|-(margin)-[options]-[permList(800)]-(margin)-|',
 			'V:|-[permList(800)]-(margin)-|',
 			'V:|-(margin)-[permList]-[total]-(margin)-|',
-			'V:|-(margin)-[sectionPreviewCaption]-[preview]-(margin)-|',			
-			]
-		metrics = {'margin':10}
-		tab0.group0.addAutoPosSizeRules(rules,metrics)
+			'V:|-(margin)-[sectionPreviewCaption]-[preview]-(margin)-|',
+		]
+		metrics = {'margin': 10}
+		tab0.group0.addAutoPosSizeRules(rules, metrics)
 
-		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular",callback=self.BubbleKernMain)
+		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
 		rules = [
 			'H:|-(margin)-[allButton]-[selButton]-(margin)-|',
 			'V:|-(margin)-[allButton]-(margin)-|',
 			'V:|-(margin)-[selButton]-(margin)-|',
-			]
-		metrics = {'margin':10}
-		tab0.group1.addAutoPosSizeRules(rules,metrics)
+		]
+		metrics = {'margin': 10}
+		tab0.group1.addAutoPosSizeRules(rules, metrics)
 
 		rules = [
 			'H:|[group0]|',
 			'H:|[group1]|',
 			'V:|[group0][group1]|',
-			]
-		tab0.addAutoPosSizeRules(rules,None)
+		]
+		tab0.addAutoPosSizeRules(rules, None)
 
 		# GENERATE FONT TAB
 		tab1 = self.w.tabs[1]
@@ -158,8 +162,8 @@ class BubbleKernKerner(GeneralPlugin):
 		rules = [
 			'H:|[tabs]|',
 			'V:|[tabs]|',
-			]
-		self.w.addAutoPosSizeRules(rules,None)
+		]
+		self.w.addAutoPosSizeRules(rules, None)
 
 		# self.loadPrefs()
 
@@ -183,23 +187,29 @@ class BubbleKernKerner(GeneralPlugin):
 			print("BubbleKern Error (refreshOptions): %s" % e)
 
 	@objc.python_method
-	def optionTasks(self, sender): # dealing with presets popup
+	def optionTasks(self, sender):  # dealing with presets popup
 		pass
+
 	@objc.python_method
-	def permListSelected(self, sender): # when permutation list line has been selected
+	def permListSelected(self, sender):  # when permutation list line has been selected
 		pass
+
 	@objc.python_method
-	def permListDoubleClick(self, sender): # when permutation list line has been double-clicked
+	def permListDoubleClick(self, sender):  # when permutation list line has been double-clicked
 		pass
+
 	@objc.python_method
-	def dropListSelfCallback(self, sender): # when drag item has been dropped. not working
+	def dropListSelfCallback(self, sender):  # when drag item has been dropped. not working
 		pass
+
 	@objc.python_method
-	def addButton(self, sender): # add a permutation
+	def addButton(self, sender):  # add a permutation
 		pass
+
 	@objc.python_method
-	def delButton(self, sender): # remove a selected permutation
+	def delButton(self, sender):  # remove a selected permutation
 		pass
+
 	@objc.python_method
-	def BubbleKernMain(self, sender): # generate kerning
+	def BubbleKernMain(self, sender):  # generate kerning
 		pass

@@ -6,11 +6,11 @@
 
 from __future__ import division, print_function, unicode_literals
 import objc
-from GlyphsApp import *
-from GlyphsApp.plugins import *
+from GlyphsApp import Glyphs, GSAnchor
+from GlyphsApp.plugins import ReporterPlugin
 import traceback
-from dataclasses import dataclass, field
-from AppKit import NSBezierPath
+from Foundation import NSAffineTransform
+from AppKit import NSBezierPath, NSColor
 
 @dataclass()
 class layerAttributes:
@@ -25,11 +25,11 @@ class ShowKernBubbles4(ReporterPlugin):
 	def settings(self):
 		self.menuName = Glyphs.localize({
 			'en': 'Kern Bubbles 4',
-			})
+		})
 		# self.generalContextMenus = [{
 		# 	'name': Glyphs.localize({
 		# 		'en': 'Do something',
-		# 		}), 
+		# 		}),
 		# 	'action': self.doSomething_
 		# 	}]
 
@@ -108,10 +108,10 @@ class ShowKernBubbles4(ReporterPlugin):
 			print('buildBubble error: ', traceback.format_exc())
 
 	@objc.python_method
-	def inactiveLayerBackground(self, layer): # drawing for non-main glyphs
+	def inactiveLayerBackground(self, layer):  # drawing for non-main glyphs
 		try:
 			scale = Glyphs.font.currentTab.scale
-			if scale > 0.1: # if above 100 pts when text metrics also disappear
+			if scale > 0.1:  # if above 100 pts when text metrics also disappear
 				# defaultColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.5, 0.4, 1.0, 0.25)
 				# defaultColor.set()
 
@@ -125,7 +125,7 @@ class ShowKernBubbles4(ReporterPlugin):
 					bubblePathL = NSBezierPath.alloc().init()
 					self.buildBubble(theAttributes=theBubbles, bubblePath=bubblePathL, inheritedTransforms=[], lastDepth=0, isLeft=True)
 					NSColor.systemCyanColor().colorWithAlphaComponent_(0.5).set()
-					bubblePathL.setLineWidth_( 2/scale )
+					bubblePathL.setLineWidth_(2 / scale)
 					bubblePathL.stroke()
 
 					bubblePathR = NSBezierPath.alloc().init()
@@ -136,14 +136,14 @@ class ShowKernBubbles4(ReporterPlugin):
 					bubblePathR.transformUsingAffineTransform_(transform)
 
 					NSColor.systemPinkColor().colorWithAlphaComponent_(0.5).set()
-					bubblePathR.setLineWidth_( 2/scale )
+					bubblePathR.setLineWidth_(2 / scale)
 					bubblePathR.stroke()
 
 		except:
 			print('inactiveLayerBackground error: ', traceback.format_exc())
 
 	@objc.python_method
-	def background(self, layer): # drawing for the main glyph
+	def background(self, layer):  # drawing for the main glyph
 		try:
 			theController = Glyphs.currentDocument.windowController()
 			toolEventHandler = theController.toolEventHandler()
@@ -157,7 +157,7 @@ class ShowKernBubbles4(ReporterPlugin):
 			print('background error: ', traceback.format_exc())
 
 
-	def doSomething_(self, sender): # unused
+	def doSomething_(self, sender):  # unused
 		print('Just did something')
 
 	@objc.python_method
@@ -169,9 +169,9 @@ class ShowKernBubbles4(ReporterPlugin):
 		# Execute only if layers are actually selected
 		if Glyphs.font.selectedLayers:
 			layer = Glyphs.font.selectedLayers[0]
-			
+
 			# Exactly one object is selected and it’s an anchor
-			if len(layer.selection) == 1 and type(layer.selection[0]) == GSAnchor:
+			if len(layer.selection) == 1 and isinstance(layer.selection[0], GSAnchor):
 				pass
 				# Add context menu item
 				# contextMenus.append({
@@ -181,7 +181,7 @@ class ShowKernBubbles4(ReporterPlugin):
 				# 		'fr': 'Faire aute chose',
 				# 		'es': 'Hacer algo más',
 				# 		'pt': 'Faça outra coisa',
-				# 		}), 
+				# 		}),
 				# 	'action': self.doSomethingElse_
 				# 	})
 
