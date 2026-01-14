@@ -1,11 +1,11 @@
 from __future__ import division, print_function, unicode_literals
 
 import objc
-from GlyphsApp import Glyphs, EDIT_MENU
+from GlyphsApp import Glyphs, GSLayer, GSGlyph, GSCallbackHandler, EDIT_MENU
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
-from typing import Optional
+from typing import Optional, Any
 
 from AppKit import (
 	NSMenuItem,
@@ -44,6 +44,7 @@ class BubbleKernKerner(GeneralPlugin):
 			'en': 'BubbleKern Kerner…',
 			'ja': 'BubbleKern ダイアログ…'
 		})
+		GSCallbackHandler.addCallback_forOperation_(self, "GSPrepareLayerCallback")
 
 	@objc.python_method
 	def start(self):  # STUFF TO UPON GLYPHS STARTUP
@@ -219,3 +220,22 @@ class BubbleKernKerner(GeneralPlugin):
 	@objc.python_method
 	def BubbleKernMain(self, sender):  # generate kerning
 		pass
+
+	def interpolateLayer_glyph_interpolation_error_(self, layer: GSLayer, glyph: GSGlyph, interpolation: dict, error: Any):
+		'''
+		interpolation = {
+			masterID1: 0.2,
+			masterID2: 0.8,
+		}
+		'''
+		''' TODO: actuelly implement this:
+		otherLayer = glyph.layers[masterID1]
+
+		bubble = otherLayer.bubble
+		if bubble is None:
+			return
+
+		for bubbleNode in bubble.leftNode:
+			bubbleNode.x *= 0.2
+			bubbleNode.y *= 0.2
+		'''
