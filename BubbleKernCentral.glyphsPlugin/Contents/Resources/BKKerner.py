@@ -5,6 +5,7 @@ from GlyphsApp import Glyphs, EDIT_MENU
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
+from typing import Optional
 
 from AppKit import (
 	NSMenuItem,
@@ -35,6 +36,7 @@ toolOrderDragType = "toolOrderDragType"
 
 class BubbleKernKerner(GeneralPlugin):
 	name: str
+	w: Optional[vanilla.Window] = None
 
 	@objc.python_method
 	def settings(self):
@@ -49,8 +51,8 @@ class BubbleKernKerner(GeneralPlugin):
 		newMenuItem.setTarget_(self)
 		Glyphs.menu[EDIT_MENU].append(newMenuItem)
 
-		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
-
+	def buildWindow(self):
+		# self.font = Glyphs.font  # allows the plugin to stick to the initially given font
 		self.w = vanilla.Window(
 			(230, 500),
 			# minSize=(200, 300),
@@ -168,8 +170,12 @@ class BubbleKernKerner(GeneralPlugin):
 		# self.loadPrefs()
 
 	def showWindow_(self, sender):
+		if self.w is None:
+			self.buildWindow()
+
 		try:
-			self.w.open()
+			if self.w is not None:
+				self.w.open()
 		except:
 			print(traceback.format_exc())
 
