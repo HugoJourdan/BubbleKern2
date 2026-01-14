@@ -216,7 +216,7 @@ class BubbleKernTool4(SelectTool):
 			Glyphs.addCallback(self.updateUI, UPDATEINTERFACE)
 			self.font = Glyphs.font
 			m = self.font.selectedFontMaster
-			self.activeLayer = self.font.currentTab.graphicView().activeLayer()
+			self.activeLayer = self.editViewController().activeLayer()
 			self.layerWidthPrev = self.activeLayer.width  # to keep track of width change for correcting R bubble
 			self.loadNodesFromLayer(self.activeLayer)
 		except:
@@ -303,7 +303,7 @@ class BubbleKernTool4(SelectTool):
 				# print(self.font)
 				# print(self.font.currentTab)
 				# print(self.font.currentTab.graphicView())
-				layer = self.font.currentTab.graphicView().activeLayer()
+				layer = self.editViewController().activeLayer()
 			self.activeLayer = layer
 			m = self.font.selectedFontMaster
 			self.bubbles = {}
@@ -529,7 +529,7 @@ class BubbleKernTool4(SelectTool):
 			return
 		try:
 			# "TRUE" REFERS TO ACTIVE STATE
-			self.drawBubbleWalls(layer, True, self.font.currentTab.selectedLayerOrigin, {})
+			self.drawBubbleWalls(layer, True, self.editViewController().selectedLayerOrigin, {})
 
 		# 	f = self.font
 		# 	mId = layer.associatedMasterId
@@ -602,9 +602,9 @@ class BubbleKernTool4(SelectTool):
 	@objc.python_method
 	def drawBubbleWalls(self, layer, active, layerOrigin, layerAttributes):
 		try:
-			f = self.font
 			mId = layer.associatedMasterId
-			scale = f.currentTab.scale
+			controller = self.editViewController()
+			scale = controller.scale
 
 			if layer.isAligned:  # DRAW PRE-COMPOSED BUBBLES
 				pass
@@ -704,8 +704,7 @@ class BubbleKernTool4(SelectTool):
 	def mouseMoved_(self, theEvent):
 		try:
 			graphicView = self.editViewController().graphicView()
-			f = self.font
-			scale = f.currentTab.scale
+			scale = graphicView.scale()
 			mousePos = graphicView.getActiveLocation_(theEvent)  # pos relative to active layer
 			mpx, mpy = mousePos.x, mousePos.y
 			clickRadiusAbsolute = clickRadius / scale  # click radius
@@ -855,7 +854,7 @@ class BubbleKernTool4(SelectTool):
 						self._dragging_nodes = []  # MAYBE SELECT THE NODE
 						self._drag_offset = (0.0, 0.0)
 
-				graphicView.redraw()
+				controller.redraw()
 		except:
 			print("mouseDown_ error: " + traceback.format_exc())
 

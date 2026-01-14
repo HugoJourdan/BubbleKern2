@@ -110,7 +110,7 @@ class ShowKernBubbles4(ReporterPlugin):
 	@objc.python_method
 	def inactiveLayerBackground(self, layer):  # drawing for non-main glyphs
 		try:
-			scale = Glyphs.font.currentTab.scale
+			scale = self.controller.scale
 			if scale > 0.1:  # if above 100 pts when text metrics also disappear
 				# defaultColor = NSColor.colorWithCalibratedRed_green_blue_alpha_(0.5, 0.4, 1.0, 0.25)
 				# defaultColor.set()
