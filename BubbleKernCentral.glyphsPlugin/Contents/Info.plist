@@ -28,9 +28,7 @@
 	<string>BubbleKern4</string> -->
 	<key>Principal Classes</key>
 	<array>
-		<string>BubbleKern4</string>
 		<string>BubbleKernKerner</string>
-		<string>ShowKernBubbles4</string>
 		<string>BubbleKernTool4</string>
 	</array>
 	<key>PyMainFileNames</key>
