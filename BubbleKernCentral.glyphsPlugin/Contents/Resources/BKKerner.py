@@ -159,7 +159,7 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0.addAutoPosSizeRules(rules, None)
 
 		# GENERATE FONT TAB
-		tab1 = self.w.tabs[1]
+		# tab1 = self.w.tabs[1]
 
 		# LAYOUT WINDOW
 		rules = [
