@@ -451,12 +451,7 @@ class BubbleKernTool4(SelectTool):
 
 			bubbles: dict = layer.tempData[TempDataBubblesKey]
 
-			inheritL = layer.userData['BubbleKernInheritL']
-			inheritR = layer.userData['BubbleKernInheritR']
-			if isinstance(inheritL, str) and len(inheritL) == 0:
-				inheritL = None
-			if isinstance(inheritR, str) and len(inheritR) == 0:
-				inheritR = None
+			_, _, inheritL, inheritR = self.infoForLayer(layer)
 
 			drawNodesL = not inheritL and not layer.isAligned
 			drawNodesR = not inheritR and not layer.isAligned
