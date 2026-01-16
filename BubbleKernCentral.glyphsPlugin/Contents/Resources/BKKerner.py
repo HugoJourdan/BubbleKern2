@@ -44,7 +44,7 @@ class BubbleKernKerner(GeneralPlugin):
 			'en': 'BubbleKern Kerner…',
 			'ja': 'BubbleKern ダイアログ…'
 		})
-		GSCallbackHandler.addCallback_forOperation_(self, "GSPrepareLayerCallback")
+		# GSCallbackHandler.addCallback_forOperation_(self, "GSPrepareLayerCallback")
 
 	@objc.python_method
 	def start(self):  # STUFF TO UPON GLYPHS STARTUP
