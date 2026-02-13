@@ -29,7 +29,7 @@
 	<key>Principal Classes</key>
 	<array>
 		<string>BubbleKernKerner</string>
-		<string>BubbleKernTool4</string>
+		<string>BubbleKernTool</string>
 	</array>
 	<key>PyMainFileNames</key>
 	<array>

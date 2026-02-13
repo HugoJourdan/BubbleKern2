@@ -5,4 +5,4 @@
 # I'LL CHANGE '4' TO 2 EVENTUALLY.
 
 from BKKerner import BubbleKernKerner
-from BKTool import BubbleKernTool4
+from BKTool import BubbleKernTool
