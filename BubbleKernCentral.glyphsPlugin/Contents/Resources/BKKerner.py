@@ -17,7 +17,6 @@ from AppKit import (
 	NSFloatingWindowLevel,
 )
 
-
 # Vanilla.Sheet which can be closed upon esc key press
 class escapableSheet(vanilla.Sheet):
 	def cancelOperation_(self, sender):
@@ -53,6 +52,7 @@ class BubbleKernKerner(GeneralPlugin):
 		newMenuItem.setTarget_(self)
 		Glyphs.menu[EDIT_MENU].append(newMenuItem)
 
+	@objc.python_method
 	def buildWindow(self):
 		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
 		self.w = vanilla.Window(
@@ -155,9 +155,9 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
 		rules = [
-			'H:|-(margin)-[spacer0(>=100)][allButton]-[selButton]-(margin)-|',
+			'H:|-(margin)-[spacer0(>=100)][allButton(==selButton)]-[selButton]-(margin)-|',
 			'V:|-(margin)-[spacer0]-(margin)-|',
-			'V:|-(margin)-[allButton(==selButton)]-(margin)-|',
+			'V:|-(margin)-[allButton]-(margin)-|',
 			'V:|-(margin)-[selButton]-(margin)-|',
 		]
 		metrics = {'margin': 10}
@@ -197,7 +197,7 @@ class BubbleKernKerner(GeneralPlugin):
 		]
 		self.w.addAutoPosSizeRules(rules, None)
 
-		self.refreshOptions() # load popup
+		# self.refreshOptions() # load popup
 		self.loadPreferences() # load permList
 
 	def showWindow_(self, sender):
@@ -216,22 +216,28 @@ class BubbleKernKerner(GeneralPlugin):
 		self.w.hide() # hide the window instead of closing
 		return False   # IMPORTANT: prevents actual close
 
-	def updatePresetsButton(self):  # refresh option popup items
-		try:
-			favNameList = self.favNameList()
-			self.w.tabs[0].options.setItems(tab0options + favNameList)
-			menu = self.w.tabs[0].options._nsObject.menu()
-			menu.itemAtIndex_(0).setEnabled_(False)
-			divider0 = NSMenuItem.separatorItem()
-			menu.insertItem_atIndex_(divider0, 6)
-			menu.itemAtIndex_(7).setEnabled_(False)
-		except:
-			print("BubbleKern Error (refreshOptions):", traceback.format_exc())
+	# def updatePresetsButton(self):  # refresh option popup items
+	# 	try:
+	# 		favNameList = self.favNameList()
+	# 		self.w.tabs[0].options.setItems(tab0options + favNameList)
+	# 		menu = self.w.tabs[0].options._nsObject.menu()
+	# 		menu.itemAtIndex_(0).setEnabled_(False)
+	# 		divider0 = NSMenuItem.separatorItem()
+	# 		menu.insertItem_atIndex_(divider0, 6)
+	# 		menu.itemAtIndex_(7).setEnabled_(False)
+	# 	except:
+	# 		print("BubbleKern Error (refreshOptions):", traceback.format_exc())
 
 	@objc.python_method
 	def popupTasks(self, sender):  # dealing with presets popup
-		print("popup selected", sender.get())
-		self.loadPreferences(sender)
+		index = sender.get()
+		print("popup selected", index)
+		# items = sender.getItems()
+		# print("selected item:", items[index] if 0 <= index < len(items) else "INVALID INDEX")
+		# print("all items:", items)
+
+		# print("popup selected", sender.get())
+		# self.loadPreferences(sender)
 		pass
 
 	@objc.python_method
@@ -296,7 +302,8 @@ class BubbleKernKerner(GeneralPlugin):
 			if sender == self.w.tabs[0].group0.optionsPopup:
 				print(sender.get())
 			else: # the permList has been edited
-				print('Hello!', sender)
+				pass
+				# print('Hello!', sender)
 		except: 
 			print("BubbleKern Error (loadPreferences):", traceback.format_exc())
 
