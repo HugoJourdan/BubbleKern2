@@ -5,10 +5,11 @@ from GlyphsApp import Glyphs, GSLayer, GSGlyph, GSCallbackHandler, EDIT_MENU
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
-import re # for displaying font file name
+import re  # for displaying font file name
 from typing import Optional, Any
 
-from Foundation import NSMutableDictionary
+# from Foundation import NSMutableDictionary
+
 from AppKit import (
 	NSMenuItem,
 	NSImage,  # for setting plus and minus button image
@@ -29,6 +30,7 @@ class escapableSheet(vanilla.Sheet):
 # 3. REMOVES BUBBLE DATA ENTIRELY
 
 # THE BACKEND CODE FOR COMPUTING BUBBLE SHAPES SHOULD BE SHARED WITH THE DRAWING METHODS (IN BKCOMMONLOGIC)
+
 
 popupOptions = ["New Set", "Rename Set...", "Delete Set..."]
 
@@ -74,7 +76,7 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0 = self.w.tabs[0]  # STANDARD KERNIG GENERATION
 		tab0.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
 		tab0.group1 = vanilla.Group('auto')  # BUTTONS
-		
+
 		tab0.group0.optionsPopup = vanilla.PopUpButton('auto', popupOptions, callback=self.popupTasks)  # POPUP MENU
 		# tab0.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
 
@@ -86,8 +88,8 @@ class BubbleKernKerner(GeneralPlugin):
 			'auto',
 			emptyPermutation,
 			columnDescriptions=[
-				{"title": "Left",},
-				{"title": "Right",},
+				{"title": "Left"},
+				{"title": "Right"},
 				{
 					"title": "Add Flipped",
 					"cell": vanilla.CheckBoxListCell(),
@@ -131,7 +133,7 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0.group0.addButton = vanilla.ImageButton('auto', imageObject=plusImage, callback=self.addButton)
 		minusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("trash", None)
 		tab0.group0.delButton = vanilla.ImageButton('auto', imageObject=minusImage, callback=self.delButton)
-		
+
 		tab0.group0.spacer0 = vanilla.Group('auto')
 		tab0.group0.spacer1 = vanilla.Group('auto')
 		tab0.group0.spacer2 = vanilla.Group('auto')
@@ -140,7 +142,7 @@ class BubbleKernKerner(GeneralPlugin):
 			'H:|-(margin)-[optionsPopup]-[spacer0(>=100)]-(margin)-|',
 			'H:|-(margin)-[permList(>=600)][preview(150)]-(margin)-|',
 			'H:|-(margin)-[addButton(iconButton)][delButton(iconButton)]-[spacer1(>=100)]-[total][spacer2(150)]-(margin)-|',
-	
+
 			'V:|-(margin)-[optionsPopup]-[permList(>=100)][addButton(iconButton)]|',
 			'V:|-(margin)-[optionsPopup]-[permList(>=100)][delButton(iconButton)]|',
 			'V:|-(margin)-[optionsPopup]-[permList(>=100)][spacer1(iconButton)]|',
@@ -148,7 +150,7 @@ class BubbleKernKerner(GeneralPlugin):
 			'V:|-(margin)-[spacer0]-[permList(>=100)][total(iconButton)]|',
 			'V:|-(margin)-[spacer0]-[preview(>=100)][spacer2(iconButton)]|',
 		]
-		metrics = {'margin': 10, 'iconButton':24}
+		metrics = {'margin': 10, 'iconButton': 24}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
 
 		tab0.group1.spacer0 = vanilla.Group('auto')
@@ -176,7 +178,7 @@ class BubbleKernKerner(GeneralPlugin):
 		# REMOVE BUBBLEKERN TAB
 		tab2 = self.w.tabs[2]
 		filepath = self.font.filepath
-		fileName = '(%s)' % re.sub('.*/','',filepath) if filepath != None else ''
+		fileName = '(%s)' % re.sub('.*/', '', filepath) if filepath is not None else ''
 		tab2.message = vanilla.TextBox('auto', f"Here, you can remove BubbleKern data from the font:\n\n{self.font.familyName} {fileName}")
 		tab2.button = vanilla.Button('auto', 'Remove; yes I am absolutely sure.', self.removeBubbles)
 		tab2.spacer0 = vanilla.Group('auto')
@@ -197,23 +199,23 @@ class BubbleKernKerner(GeneralPlugin):
 		]
 		self.w.addAutoPosSizeRules(rules, None)
 
-		# self.refreshOptions() # load popup
-		self.loadPreferences() # load permList
+		# self.refreshOptions()  # load popup
+		self.loadPreferences()  # load permList
 
 	def showWindow_(self, sender):
 		try:
 			self.font = Glyphs.font
-			if self.font is None: # no open font
+			if self.font is None:  # no open font
 				return
-			if self.w is None: # no open window yet
+			if self.w is None:  # no open window yet
 				self.buildWindow()
-			
 			self.w.open()
 		except:
 			print(traceback.format_exc())
 
-	def windowShouldClose_(self, sender): # User attempts to close the main window
-		self.w.hide() # hide the window instead of closing
+	def windowShouldClose_(self, sender):  # User attempts to close the main window
+		if self.w:
+			self.w.hide()  # hide the window instead of closing
 		return False   # IMPORTANT: prevents actual close
 
 	# def updatePresetsButton(self):  # refresh option popup items
@@ -245,17 +247,18 @@ class BubbleKernKerner(GeneralPlugin):
 		try:
 			favDic = Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
 			favDicNames = [k for k in favDic.keys()]
-			thePopup = self.w.tabs[0].group0.optionsPopup
+			if self.w:
+				thePopup = self.w.tabs[0].group0.optionsPopup
 
-			# favNameList = self.favNameList()
-			thePopup.setItems( favDicNames + popupOptions )
+				# favNameList = self.favNameList()
+				thePopup.setItems(favDicNames + popupOptions)
 
-			# add separator
-			menu = thePopup._nsObject.menu()
-			# menu.itemAtIndex_(0).setEnabled_(False) # from old implementation
-			divider0 = NSMenuItem.separatorItem()
-			menu.insertItem_atIndex_(divider0, len(favDic))
-			menu.itemAtIndex_( len(favDic)+1 ).setEnabled_(False) # disable separator
+				# add separator
+				menu = thePopup._nsObject.menu()
+				# menu.itemAtIndex_(0).setEnabled_(False) # from old implementation
+				divider0 = NSMenuItem.separatorItem()
+				menu.insertItem_atIndex_(divider0, len(favDic))
+				menu.itemAtIndex_(len(favDic) + 1).setEnabled_(False)  # disable separator
 
 		except Exception as e:
 			Glyphs.showMacroWindow()
@@ -264,17 +267,17 @@ class BubbleKernKerner(GeneralPlugin):
 	@objc.python_method
 	def loadPreferences(self, sender=None):
 		try:
-			permListUI = self.w.tabs[0].group0.permList
+			# permListUI = self.w.tabs[0].group0.permList
 			favDic = Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
 
-			if Glyphs.defaults["com.Tosche.BubbleKern.favDic"] == None:
+			if Glyphs.defaults["com.Tosche.BubbleKern.favDic"] is None:
 				# Fallback to default favourite dictionary
 				favDic = {
 					"Sample": (
 						(
-							"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z", # Left
-							"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z", # Right
-							False, # add flipped
+							"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z",  # Left
+							"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z",  # Right
+							False,  # add flipped
 						),
 						(
 							"a b c d e f g h i j k l m n o p q r s t u v w x y z",
@@ -294,36 +297,37 @@ class BubbleKernKerner(GeneralPlugin):
 					)
 				}
 				Glyphs.defaults["com.Tosche.BubbleKern.favDic"] = favDic
-			else: # favDic exists, but not validated
+			else:  # favDic exists, but not validated
 				pass
 			# favDic = NSMutableDictionary.alloc().initWithDictionary_copyItems_(favDic, True)
 
 			# which dic to set
 			if sender == self.w.tabs[0].group0.optionsPopup:
 				print(sender.get())
-			else: # the permList has been edited
+			else:  # the permList has been edited
 				pass
 				# print('Hello!', sender)
-		except: 
+		except:
 			print("BubbleKern Error (loadPreferences):", traceback.format_exc())
 
 	@objc.python_method
 	def SavePreferences(self, sender):
 		# rewrite as if it's called everyt time permList is dragged, or list content edited
 		try:
-			permList = []
-			permListUI = self.w.tabs[0].group0.permList
-			for item in permListUI.get():
-				print(item)
-# 			for i in range(len(self.w.tabs[0].permList)): # get it right
-# 				perm = []
-# 				perm.append(self.w.tabs[0].permList[i]["Left"])
-# 				perm.append(self.w.tabs[0].permList[i]["Right"])
-# 				perm.append(self.w.tabs[0].permList[i]["Add Flipped"])
-# 				permList.append(perm)
-# 			favDic[permutationName] = permList
+			# permList = []
+			if self.w:
+				permListUI = self.w.tabs[0].group0.permList
+				for item in permListUI.get():
+					print(item)
+				# for i in range(len(self.w.tabs[0].permList)): # get it right
+				# 	perm = []
+				# 	perm.append(self.w.tabs[0].permList[i]["Left"])
+				# 	perm.append(self.w.tabs[0].permList[i]["Right"])
+				# 	perm.append(self.w.tabs[0].permList[i]["Add Flipped"])
+				# 	permList.append(perm)
+				# favDic[permutationName] = permList
 
-	# 		Glyphs.defaults["com.Tosche.BubbleKern.favDic"] = favDic
+				# Glyphs.defaults["com.Tosche.BubbleKern.favDic"] = favDic
 		except:
 			print("BubbleKern Error (SavePreferences):", traceback.format_exc())
 
@@ -346,7 +350,7 @@ class BubbleKernKerner(GeneralPlugin):
 			self.s.edit0._textView.setFont_(Menlo12)
 			self.s.edit1 = vanilla.TextEditor('auto', groupText1)
 			self.s.edit1._textView.setFont_(Menlo12)
-			self.s.instruction = vanilla.TextBox('auto',"Enter list of glyph names; they can be separated by space, slash, comma, tab, or line break.")
+			self.s.instruction = vanilla.TextBox('auto', "Enter list of glyph names; they can be separated by space, slash, comma, tab, or line break.")
 			self.s.cancel = vanilla.Button('auto', "Cancel", callback=self.cancelEditPermutation)
 			self.s.ok = vanilla.Button('auto', "OK", callback=self.confirmEditPermutation)
 			self.s.spacer0 = vanilla.Group('auto')
@@ -367,7 +371,7 @@ class BubbleKernKerner(GeneralPlugin):
 			pass
 
 	@objc.python_method
-	def cancelEditPermutation(self,sender): # Close sheet by clicking cancel (esc is implemented as subclass)
+	def cancelEditPermutation(self, sender):  # Close sheet by clicking cancel (esc is implemented as subclass)
 		try:
 			self.s.close()
 		except:
@@ -377,7 +381,7 @@ class BubbleKernKerner(GeneralPlugin):
 	def cleanUpText(self, text) -> str:  # Function to clean up the glyph name list in Sheet
 		try:
 			text = re.sub("[/,\n\t]", " ", text)
-			text = text.split() # turn to a list
+			text = text.split()  # turn to a list
 			return '/n'.join(text)
 		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
 			print('cleanUpText error: ', traceback.format_exc())
@@ -392,7 +396,7 @@ class BubbleKernKerner(GeneralPlugin):
 			text2 = self.s.edit1.get()
 			newText1 = self.cleanUpText(text1)
 			newText2 = self.cleanUpText(text2)
-			if newText1 == False or newText2 == False:
+			if not newText1 or not newText2:
 				# Message('', "Invalid text!")
 				pass
 			else:
@@ -401,7 +405,7 @@ class BubbleKernKerner(GeneralPlugin):
 				permListUI[i]["Left"] = newText1
 				permListUI[i]["Right"] = newText2
 				self.s.close()
-				self.refreshSectionPreview(i)
+				# self.refreshSectionPreview(i)
 
 		except:
 			print(traceback.format_exc())
@@ -446,16 +450,18 @@ class BubbleKernKerner(GeneralPlugin):
 	def removeBubbles(self, sender):
 		try:
 			self.font
-			del(self.font.userData['useBubbleKern'])
+			del self.font.userData['useBubbleKern']
 
-			keys = ('BubbleKernExportL', 'BubbleKernExportR',
+			keys = (
+				'BubbleKernExportL', 'BubbleKernExportR',
 				'BubbleKernReferL', 'BubbleKernReferR',
-				'BubbleKernNodesL', 'BubbleKernNodesR')
+				'BubbleKernNodesL', 'BubbleKernNodesR'
+			)
 			for g in self.font.glyphs:
 				for gl in g.layers:
 					for key in keys:
 						try:
-							del(gl.userData[key])
+							del gl.userData[key]
 						except:
 							pass
 		except:

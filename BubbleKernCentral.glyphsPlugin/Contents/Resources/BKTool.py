@@ -26,7 +26,7 @@ from Cocoa import (
 	NSAlertStyleCritical,
 )
 
-from typing import Self, Optional
+from typing import Self
 
 from BKCommonLogic import getFinalBubble
 
@@ -116,7 +116,7 @@ def makeBubbleNode(x, y, italicAngle, xHeight):
 	node.setPosition_(NSPoint(round(newX), round(y)))
 	return node
 
-def tempToUserNodeX(x,y,italicAngle, xHeight):
+def tempToUserNodeX(x, y, italicAngle, xHeight):
 	if italicAngle != 0:
 		italicAngle = radians(90 - italicAngle)
 		return x - (y - xHeight / 2) / tan(italicAngle)
@@ -179,8 +179,9 @@ def italicOffset(node, angle, xHeight):
 	except:
 		return 0
 
+
 mainDrawingHandler = None
-bubbleDrawingIsActive = False # True if I want to draw all the time
+bubbleDrawingIsActive = False  # True if I want to draw all the time
 
 class BubbleKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
@@ -322,9 +323,9 @@ class BubbleKernTool(SelectTool):
 
 	@objc.python_method
 	def setActiveLayer(self):
-		if self.editViewController() == None:
+		if self.editViewController() is None:
 			return None
-		elif self.editViewController().activeLayer() == None:
+		elif self.editViewController().activeLayer() is None:
 			return None
 		else:
 			self.activeLayer = self.editViewController().activeLayer()
@@ -343,7 +344,7 @@ class BubbleKernTool(SelectTool):
 	@objc.python_method
 	def updateUI(self, theEvent):  # Fill UI fields from userData after Interface change
 		try:
-			if self.setActiveLayer() == None:
+			if self.setActiveLayer() is None:
 				return
 			layer = self.activeLayer
 			value = layer.userData['BubbleKernReferL']
@@ -364,7 +365,7 @@ class BubbleKernTool(SelectTool):
 		return self.infoBoxView
 
 	@objc.python_method
-	def infoForLayer(self, layer): # RETURNS exportL, exportR, referL, referR
+	def infoForLayer(self, layer):  # RETURNS exportL, exportR, referL, referR
 		userData = layer.userData
 		exportL = bool(userData.get("BubbleKernExportL", True))
 		exportR = bool(userData.get("BubbleKernExportR", True))
@@ -378,7 +379,7 @@ class BubbleKernTool(SelectTool):
 		return exportL, exportR, referL, referR
 
 	@objc.python_method
-	def saveInfoToLayer(self, layer): # CALLED AFTER UI CHANGE. SAVES "INHERIT" AND "EXPORT" STATUS TO LAYER USERDATA
+	def saveInfoToLayer(self, layer):  # CALLED AFTER UI CHANGE. SAVES "INHERIT" AND "EXPORT" STATUS TO LAYER USERDATA
 		# SAVE INTERFACE'S GLYPH NAME, L
 		value = self.w.group.glyphNameL.get()
 		if isinstance(value, str) and len(value) == 0:
@@ -387,9 +388,9 @@ class BubbleKernTool(SelectTool):
 			# IF USERDATA AND UI FIELD DISAGREE, DELETE TEMP DATA
 			del layer.tempData[TempDataBubblesKey]
 
-		if value: # SAVE
+		if value:  # SAVE
 			layer.userData['BubbleKernReferL'] = value
-		else: # REMOVE REFERENCE IF UI IS EMPTY
+		else:  # REMOVE REFERENCE IF UI IS EMPTY
 			del layer.userData['BubbleKernReferL']
 
 		# REPEAT THE ABOVE FOR R
@@ -407,7 +408,7 @@ class BubbleKernTool(SelectTool):
 		value = self.w.group.exportL.get()
 		if value:
 			layer.userData['BubbleKernExportL'] = int(value)
-		else: # REMOVE REFERENCE IF UI IS EMPTY
+		else:  # REMOVE REFERENCE IF UI IS EMPTY
 			del layer.userData['BubbleKernExportL']
 
 		# REPEAT THE ABOVE FOR R
@@ -418,19 +419,19 @@ class BubbleKernTool(SelectTool):
 			del layer.userData['BubbleKernExportR']
 
 	@objc.python_method
-	def saveNodesToLayer(self, layer): # SAVES NODES TO LAYER USERDATA
+	def saveNodesToLayer(self, layer):  # SAVES NODES TO LAYER USERDATA
 		m = layer.master
 		italicAngle, xHeight = m.italicAngle, m.xHeight
-		bubbles = layer.tempData[TempDataBubblesKey] # bubble tempData may not exist yet
+		bubbles = layer.tempData[TempDataBubblesKey]  # bubble tempData may not exist yet
 		value = bubbles[TempDataLeftNodesKey] if bubbles else None
 
 		if value:
-			value = sorted(value, key = lambda node: node.y) # SORT NODES BY HEIGHT
-			
+			value = sorted(value, key=lambda node: node.y)  # SORT NODES BY HEIGHT
+
 			# fix italic offset when transferring from tempData to userData
 			userDataValue = []
 			for n in value:
-				userDataValue.append( (int(round(tempToUserNodeX(n.x,n.y,italicAngle, xHeight))), int(round(n.y))) )
+				userDataValue.append((int(round(tempToUserNodeX(n.x, n.y, italicAngle, xHeight))), int(round(n.y))))
 			layer.userData['BubbleKernNodesL'] = userDataValue
 			# layer.userData['BubbleKernNodesL'] = [[int(round(n.pos.x)), int(round(n.pos.y))] for n in value]
 			# SAVE BACK TO REFLECT THE REORDERED NODES
@@ -442,10 +443,10 @@ class BubbleKernTool(SelectTool):
 		# RIGHT SIDE SHOULD SUBTRACT LAYER WIFTH
 		value = bubbles[TempDataRightNodesKey] if bubbles else None
 		if value:
-			value = sorted(value, key = lambda node: node.y) # SORT NODES BY HEIGHT
+			value = sorted(value, key=lambda node: node.y)  # SORT NODES BY HEIGHT
 			userDataValue = []
 			for n in value:
-				userDataValue.append( (int(round(tempToUserNodeX(n.x,n.y,italicAngle, xHeight) - layer.width)), int(round(n.y))) )
+				userDataValue.append((int(round(tempToUserNodeX(n.x, n.y, italicAngle, xHeight) - layer.width)), int(round(n.y))))
 			layer.userData['BubbleKernNodesR'] = userDataValue
 			# layer.userData['BubbleKernNodesR'] = [[int(round(n.pos.x - layer.width)), int(round(n.pos.y))] for n in value]
 			layer.tempData[TempDataBubblesKey][TempDataRightNodesKey] = value
@@ -462,15 +463,15 @@ class BubbleKernTool(SelectTool):
 			if layer is None:
 				layer = self.editViewController().activeLayer()
 
-			bubbles: dict | None = layer.tempData[TempDataBubblesKey] # i.e. ['bubbles']
-			if forceLoad == False:
+			bubbles: dict | None = layer.tempData[TempDataBubblesKey]  # i.e. ['bubbles']
+			if not forceLoad:
 				if bubbles:
 					prevWidth = int(bubbles['width'])
 					if prevWidth != int(layer.width):
 						# print("__!!!reset bubble", prevWidth, int(layer.width))
 						bubbles = None
 				if bubbles:
-					return bubbles # raw bubble data
+					return bubbles  # raw bubble data
 
 			if master is None:
 				master = layer.associatedFontMaster()
@@ -515,7 +516,7 @@ class BubbleKernTool(SelectTool):
 			bubbles[TempDataRightNodesKey] = [makeBubbleNode(n[0] + layer.width, n[1], master.italicAngle, master.xHeight) for n in nodesR]
 			bubbles['width'] = layer.width
 
-			layer.tempData[TempDataBubblesKey] = bubbles # set raw bubbles in tempData
+			layer.tempData[TempDataBubblesKey] = bubbles  # set raw bubbles in tempData
 
 			return bubbles
 		except:
@@ -524,11 +525,11 @@ class BubbleKernTool(SelectTool):
 			return {}
 
 	@objc.python_method
-	def foreground(self, layer): # layer to draw nodes
+	def foreground(self, layer):  # layer to draw nodes
 
 		# if Glyphs.isActive() is False: # SKIP DRAWING IF GLYPHS IS NOT IN FRONT. REALLY NECESSARY?
 		# 	return
-		if Glyphs.font.tool != self.__class__.__name__: # 'BubbleKernTool'
+		if Glyphs.font.tool != self.__class__.__name__:  # 'BubbleKernTool'
 			return
 		try:
 			graphicView = self.editViewController().graphicView()
@@ -539,9 +540,10 @@ class BubbleKernTool(SelectTool):
 			radius = diameter / 2
 
 			bubbles: dict = layer.tempData[TempDataBubblesKey]
-
-			italicAngle = layer.master.italicAngle
-			xHeight = layer.master.xHeight
+			if bubbles is None:
+				return
+			# italicAngle = layer.master.italicAngle
+			# xHeight = layer.master.xHeight
 
 			_, _, referL, referR = self.infoForLayer(layer)
 
@@ -625,7 +627,7 @@ class BubbleKernTool(SelectTool):
 		except:
 			print(traceback.print_exc())
 
-	def drawBackgroundForLayer_options_(self, layer, options): # run drawBubbleWalls()
+	def drawBackgroundForLayer_options_(self, layer, options):  # run drawBubbleWalls()
 		'''
 		options = {
 			"Scale":0.12
@@ -637,19 +639,19 @@ class BubbleKernTool(SelectTool):
 			print('Drawing active layer', layer.parent)
 			self.drawBubbleWalls(layer, True, options)
 
-	def drawBackgroundForInactiveLayer_options_(self, layer, options): # run drawBubbleWalls()
+	def drawBackgroundForInactiveLayer_options_(self, layer, options):  # run drawBubbleWalls()
 		# print('inactive current tool =', Glyphs.font.tool)
 		if Glyphs.font.tool == self.__class__.__name__: # 'BubbleKernTool'
 			# print('Drawing inactive', layer.parent)
 			self.drawBubbleWalls(layer, False, options)
 
 	@objc.python_method
-	def drawBubbleWalls(self, layer, active, drawOptions): # draws the bubble
+	def drawBubbleWalls(self, layer, active, drawOptions):  # draws the bubble
 		try:
 			if layer.isAligned:  # IF COMPONENTS ARE AUTO-ALIGNED. DRAW PRE-COMPOSED BUBBLES
 				pass
-			else: # COMPONENT NOT AUTO-ALIGNED
-				forceLoadState = False if active == True else True
+			else:  # COMPONENT NOT AUTO-ALIGNED
+				forceLoadState = False if active is True else True
 				bubbles: dict | None = self.loadNodesFromLayer(layer, forceLoad=forceLoadState)
 				if not bubbles:
 					return
@@ -875,7 +877,7 @@ class BubbleKernTool(SelectTool):
 
 	def mouseUp_(self, theEvent):
 		try:
-			objc.super(BubbleKernTool, self).mouseUp_(theEvent) # Let Glyphs do its default mouseUp_
+			objc.super(BubbleKernTool, self).mouseUp_(theEvent)  # Let Glyphs do its default mouseUp_
 			self.setActiveLayer()
 			# print('LAYER', self.activeLayer.parent.name)
 			self.saveNodesToLayer(self.activeLayer)
@@ -955,7 +957,7 @@ class BubbleKernTool(SelectTool):
 					# CHECK IF THE CLOSEST NODE IS WITHIN CLICKABLE RADIUS
 					# IF CLOSE ENOUGH, THAT'S A NEW NODE
 					if nodeAdded is True:
-						newX = tempToUserNodeX(closest[0],closest[1], m.italicAngle, m.xHeight) # correct for italic angle
+						newX = tempToUserNodeX(closest[0], closest[1], m.italicAngle, m.xHeight)  # correct for italic angle
 						new_node = makeBubbleNode(newX, closest[1], m.italicAngle, m.xHeight)
 
 						# INSERT AT CORRECT POS, NOT AT THE LAST INDEX
@@ -973,14 +975,14 @@ class BubbleKernTool(SelectTool):
 			print("mouseDown_ error: " + traceback.format_exc())
 
 
-	def insertTab_(self, sender): # WHEN TAB IS PRESSED
+	def insertTab_(self, sender):  # WHEN TAB IS PRESSED
 		self._selectNext(1)
 
-	def insertBacktab_(self, sender): # WHEN SHIFT+TAB IS PRESSED
+	def insertBacktab_(self, sender):  # WHEN SHIFT+TAB IS PRESSED
 		self._selectNext(-1)
 
 	@objc.python_method
-	def _selectNext(self, direction): # CYCLE THROUGH SELECTED NODE WITH TAB
+	def _selectNext(self, direction):  # CYCLE THROUGH SELECTED NODE WITH TAB
 		layer = self.activeLayer
 		bubbles = layer.tempData[TempDataBubblesKey]
 		allNodes = bubbles.get(TempDataLeftNodesKey, []) + bubbles.get(TempDataRightNodesKey, [])
@@ -993,7 +995,7 @@ class BubbleKernTool(SelectTool):
 		layer.selection = [nextNode]
 
 	@objc.python_method
-	def validateReferGlyph(self, layer, side): # CALLED FROM SelectAll. SIDE IS EITHER 'L' OR 'R'
+	def validateReferGlyph(self, layer, side):  # CALLED FROM SelectAll. SIDE IS EITHER 'L' OR 'R'
 		try:
 			mId = layer.associatedMasterId
 			if not self.activeLayer.userData['BubbleKernRefer' + side]:  # IF INHERIT ENTRY DOESN'T EXIST
@@ -1001,12 +1003,12 @@ class BubbleKernTool(SelectTool):
 
 			gName = self.activeLayer.userData['BubbleKernRefer' + side]
 			font = layer.font
-			if not font.glyphs[gName]: # REFERRED GLYPH NAME IS INVALID
+			if not font.glyphs[gName]:  # REFERRED GLYPH NAME IS INVALID
 				return False
-			
+
 			referredLayer = font.glyphs[gName].layers[mId]
 			if 'BubbleKernRefer' + side not in referredLayer.userData:  # CHECK NESTED INHERITANCE
-				return False # REFERRED GLYPH HAS NO BUBBLEKERN USERDATA IN THE LAYER
+				return False  # REFERRED GLYPH HAS NO BUBBLEKERN USERDATA IN THE LAYER
 
 			if referredLayer.userData['BubbleKernRefer' + side] != '':  # NEST CONFIRMED
 				if self.validateReferGlyph(referredLayer, side):
@@ -1033,14 +1035,14 @@ class BubbleKernTool(SelectTool):
 			bubbles = layer.tempData[TempDataBubblesKey]
 			nodesToAdd = []
 
-			for n in (bubbles.get(TempDataLeftNodesKey, []) + bubbles.get(TempDataRightNodesKey, []) ):
+			for n in (bubbles.get(TempDataLeftNodesKey, []) + bubbles.get(TempDataRightNodesKey, [])):
 				n.selected = False
 
 			for side in (TempDataLeftNodesKey, TempDataRightNodesKey):
-			# SKIP IF INHERITING A (VALID) GLYPH
-				if side == TempDataLeftNodesKey and self.validateReferGlyph(layer, 'L') == False:
+				# SKIP IF INHERITING A (VALID) GLYPH
+				if side != TempDataLeftNodesKey and self.validateReferGlyph(layer, 'L'):
 					nodesToAdd.extend(bubbles.get(TempDataLeftNodesKey, []))
-				if side == TempDataRightNodesKey and self.validateReferGlyph(layer, 'R') == False:
+				if side != TempDataRightNodesKey and self.validateReferGlyph(layer, 'R'):
 					nodesToAdd.extend(bubbles.get(TempDataRightNodesKey, []))
 
 			# for n in nodesToAdd:
@@ -1100,7 +1102,7 @@ class BubbleKernTool(SelectTool):
 			self.saveNodesToLayer(layer)
 			Glyphs.redraw()
 
-	def delSelectionWithModifier_(self, modifierFlag): # Called when Delete is pressed
+	def delSelectionWithModifier_(self, modifierFlag):  # Called when Delete is pressed
 		controller = self.editViewController()
 		layer = controller.activeLayer()
 		if layer and layer.selection:
@@ -1118,7 +1120,7 @@ class BubbleKernTool(SelectTool):
 			controller.redraw()
 
 	@objc.python_method
-	def eraseBubble(self, sender): # CALLED FROM INFO BOX; REMOVES BUBBLE FROM A LAYER. MOVE TO COMMON LOGIC?
+	def eraseBubble(self, sender):  # CALLED FROM INFO BOX; REMOVES BUBBLE FROM A LAYER. MOVE TO COMMON LOGIC?
 		try:
 			ud = self.activeLayer.userData
 			if sender == self.w.group.menusL:
