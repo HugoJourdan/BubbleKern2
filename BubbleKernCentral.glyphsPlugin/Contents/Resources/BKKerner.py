@@ -78,35 +78,42 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0.group1 = vanilla.Group('auto')  # BUTTONS
 
 		tab0.group0.optionsPopup = vanilla.PopUpButton('auto', popupOptions, callback=self.popupTasks)  # POPUP MENU
-		# tab0.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
+		tab0.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
 
-		emptyPermutation = [{"Left": "", "Right": "", "Add Flipped": "", "Pairs": "0"}]  # TITLE
-		# spX = 10
-		# prevX = 180
-		# GroupColumnWidth = int((self.w.getPosSize()[2] - 180 - spX * 5 - prevX) / 2 + 1)
-		tab0.group0.permList = vanilla.List(
+		emptyPermutation = [{"Left": "A B C", "Right": "d E F", "Add Flipped": True, "Pairs": "0"}]  # TITLE
+
+		dragSettings = dict(
+			makeDragDataCallback=self.makeDragDataCallback
+		)
+		dropSettings = dict(
+			pasteboardTypes=[
+				"string",
+				"Tosche.BubbleKernKerner.permListIndexes"
+			],
+			dropCandidateEnteredCallback=self.dropCandidateEnteredCallback,
+			dropCandidateCallback=self.dropCandidateCallback,
+			performDropCallback=self.performDropCallback
+		)
+
+		tab0.group0.permList = vanilla.List2(
 			'auto',
 			emptyPermutation,
 			columnDescriptions=[
-				{"title": "Left"},
-				{"title": "Right"},
-				{
-					"title": "Add Flipped",
-					"cell": vanilla.CheckBoxListCell(),
-					"width": 70,
-				},
-				{"title": "Pair Count", "width": 90},
-			],
-			#  dragSettings = dict( type=NSString, callback=self.dragCallback ), # WHY DOES THIS THING NOT WORK?
-			# toolOrderDragType = "toolOrderDragType"
-			selfDropSettings=dict(
-				type="toolOrderDragType",
-				operation=NSDragOperationMove,
-				callback=self.dropListSelfCallback,
-			),
-			allowsMultipleSelection=False,
-			selectionCallback=self.permListSelected,
-			doubleClickCallback=self.permListDoubleClick,
+				{"title": "Left", "identifier": "Left"},
+				{"title": "Right", "identifier": "Right"},
+				{"title": "Add Flipped",
+					"identifier": "Add Flipped",
+					"cellClass": vanilla.CheckBoxList2Cell,
+					"editable": True,
+					"width": 70},
+				{"title": "Pairs Count", "identifier":"Pairs", "width": 90},
+				],
+			dragSettings = dragSettings,
+			dropSettings = dropSettings,
+			allowsMultipleSelection = False,
+			selectionCallback = self.permListSelected,
+			editCallback = self.checkBoxClicked,
+			doubleClickCallback = self.permListDoubleClick,
 		)
 
 		tableView = tab0.group0.permList._tableView
@@ -143,7 +150,7 @@ class BubbleKernKerner(GeneralPlugin):
 			'V:[permList]-(8)-[total(iconButton)]',
 			'V:[optionsPopup]-[preview][addButton(iconButton)]',
 		]
-		metrics = {'margin': 10, 'iconButton': 24}
+		metrics = {'iconButton': 24}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
 
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
@@ -190,7 +197,7 @@ class BubbleKernKerner(GeneralPlugin):
 		]
 		self.w.addAutoPosSizeRules(rules, None)
 
-		# self.refreshOptions()  # load popup
+		self.refreshOptions()  # load popup
 		self.loadPreferences()  # load permList
 
 	def showWindow_(self, sender):
@@ -209,29 +216,26 @@ class BubbleKernKerner(GeneralPlugin):
 			self.w.hide()  # hide the window instead of closing
 		return False   # IMPORTANT: prevents actual close
 
-	# def updatePresetsButton(self):  # refresh option popup items
-	# 	try:
-	# 		favNameList = self.favNameList()
-	# 		self.w.tabs[0].options.setItems(tab0options + favNameList)
-	# 		menu = self.w.tabs[0].options._nsObject.menu()
-	# 		menu.itemAtIndex_(0).setEnabled_(False)
-	# 		divider0 = NSMenuItem.separatorItem()
-	# 		menu.insertItem_atIndex_(divider0, 6)
-	# 		menu.itemAtIndex_(7).setEnabled_(False)
-	# 	except:
-	# 		print("BubbleKern Error (refreshOptions):", traceback.format_exc())
 
 	@objc.python_method
 	def popupTasks(self, sender):  # dealing with presets popup
-		index = sender.get()
-		print("popup selected", index)
-		# items = sender.getItems()
-		# print("selected item:", items[index] if 0 <= index < len(items) else "INVALID INDEX")
-		# print("all items:", items)
+		try:
+			index = sender.get()
+			favDic = Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
+			favDicLength = len(favDic) + 1
 
-		# print("popup selected", sender.get())
-		# self.loadPreferences(sender)
-		pass
+			# preset menu items
+			if index == favDicLength + 0:
+				print('New set popup')
+			elif index == favDicLength + 1:
+				print('Rename set popup')
+			elif index == favDicLength + 2:
+				print('Delete set popup')
+			else:
+				pass
+
+		except:
+			print("BubbleKern Error (popupTasks):", traceback.format_exc())
 
 	@objc.python_method
 	def refreshOptions(self):  # refresh option popup items
@@ -287,6 +291,33 @@ class BubbleKernKerner(GeneralPlugin):
 						),
 					)
 				}
+
+				# favDic = [
+				# 	"Sample",
+				# 	(
+				# 		(
+				# 			"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z",  # Left
+				# 			"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z",  # Right
+				# 			False,  # add flipped
+				# 		),
+				# 		(
+				# 			"a b c d e f g h i j k l m n o p q r s t u v w x y z",
+				# 			"a b c d e f g h i j k l m n o p q r s t u v w x y z",
+				# 			False,
+				# 		),
+				# 		(
+				# 			"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z",
+				# 			"a b c d e f g h i j k l m n o p q r s t u v w x y z",
+				# 			False,
+				# 		),
+				# 		(
+				# 			"A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z",
+				# 			"period comma exclam question quoteleft quoteright",
+				# 			True,
+				# 		),
+				# 	)
+				# ]
+
 				Glyphs.defaults["com.Tosche.BubbleKern.favDic"] = favDic
 			else:  # favDic exists, but not validated
 				pass
@@ -294,10 +325,21 @@ class BubbleKernKerner(GeneralPlugin):
 
 			# which dic to set
 			if sender == self.w.tabs[0].group0.optionsPopup:
-				print(sender.get())
-			else:  # the permList has been edited
-				pass
-				# print('Hello!', sender)
+				print('Popup is loading')
+			elif sender == self.w.tabs[0].group0.permList:  # the permList has been edited
+				print('List view is loading')
+			else: # on first load; load the first item?
+				print('on first load')
+				firstKey = [k for k in favDic.keys()][0] 
+				firstItem = favDic[firstKey]
+				dictToSet = {}
+				dictToSet['Left'] = firstItem[0]
+				dictToSet['Right'] = firstItem[1]
+				dictToSet['Add Flipped'] = firstItem[2]
+				dictToSet['Pairs'] = '20'
+				self.w.tabs[0].group0.permList = dictToSet
+
+				# self.w.tabs[0].group0.permList.set()
 		except:
 			print("BubbleKern Error (loadPreferences):", traceback.format_exc())
 
@@ -379,6 +421,13 @@ class BubbleKernKerner(GeneralPlugin):
 			return text
 
 	@objc.python_method
+	def checkBoxClicked(self):
+		try:
+			print('hey')
+		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
+			print('checkBoxClicked error: ', traceback.format_exc())
+
+	@objc.python_method
 	def confirmEditPermutation(self, sender):
 		try:
 			# update items
@@ -401,9 +450,23 @@ class BubbleKernKerner(GeneralPlugin):
 		except:
 			print(traceback.format_exc())
 
+# DRAG & DROP
 	@objc.python_method
-	def dropListSelfCallback(self, sender):  # when drag item has been dropped. not working
+	def makeDragDataCallback(self):
 		pass
+
+	@objc.python_method
+	def dropCandidateEnteredCallback(self):
+		pass
+
+	@objc.python_method
+	def dropCandidateCallback(self):
+		pass
+
+	@objc.python_method
+	def performDropCallback(self):
+		pass
+# / DRAG & DROP
 
 	@objc.python_method
 	def addButton(self, sender):  # add a permutation
