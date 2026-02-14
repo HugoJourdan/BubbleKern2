@@ -124,9 +124,9 @@ class BubbleKernKerner(GeneralPlugin):
 
 
 		# tab0.group0.sectionPreviewCaption = vanilla.TextBox('auto', "Section Preview", sizeStyle="small")
-		tab0.group0.preview = vanilla.TextEditor('auto', "Total : ", readOnly=True)
+		tab0.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
 		tab0.group0.preview._textView.setFont_(Menlo12)
-		tab0.group0.total = vanilla.TextBox('auto', "", sizeStyle="small")
+		tab0.group0.total = vanilla.TextBox('auto', "Total : ", alignment="right", sizeStyle="small")
 
 		# ADD & DELETE BUTTONS:
 		plusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("plus", None)
@@ -134,35 +134,26 @@ class BubbleKernKerner(GeneralPlugin):
 		minusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("trash", None)
 		tab0.group0.delButton = vanilla.ImageButton('auto', imageObject=minusImage, callback=self.delButton)
 
-		tab0.group0.spacer0 = vanilla.Group('auto')
-		tab0.group0.spacer1 = vanilla.Group('auto')
-		tab0.group0.spacer2 = vanilla.Group('auto')
-
 		rules = [
-			'H:|-(margin)-[optionsPopup]-[spacer0(>=100)]-(margin)-|',
-			'H:|-(margin)-[permList(>=600)][preview(150)]-(margin)-|',
-			'H:|-(margin)-[addButton(iconButton)][delButton(iconButton)]-[spacer1(>=100)]-[total][spacer2(150)]-(margin)-|',
-
-			'V:|-(margin)-[optionsPopup]-[permList(>=100)][addButton(iconButton)]|',
-			'V:|-(margin)-[optionsPopup]-[permList(>=100)][delButton(iconButton)]|',
-			'V:|-(margin)-[optionsPopup]-[permList(>=100)][spacer1(iconButton)]|',
-			'V:|-(margin)-[spacer0]-[permList(>=100)][spacer1(iconButton)]|',
-			'V:|-(margin)-[spacer0]-[permList(>=100)][total(iconButton)]|',
-			'V:|-(margin)-[spacer0]-[preview(>=100)][spacer2(iconButton)]|',
+			'H:|-[optionsPopup]',
+			'H:|-[permList(>=600)][preview(150)]-|',
+			'H:|-[addButton(iconButton)][delButton(iconButton)]-[total][preview]',
+			'V:|[optionsPopup]-[permList(>=100)][addButton(iconButton)]|',
+			'V:[permList][delButton(iconButton)]',
+			'V:[permList]-(8)-[total(iconButton)]',
+			'V:[optionsPopup]-[preview][addButton(iconButton)]',
 		]
 		metrics = {'margin': 10, 'iconButton': 24}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
 
-		tab0.group1.spacer0 = vanilla.Group('auto')
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
 		rules = [
-			'H:|-(margin)-[spacer0(>=100)][allButton(==selButton)]-[selButton]-(margin)-|',
-			'V:|-(margin)-[spacer0]-(margin)-|',
-			'V:|-(margin)-[allButton]-(margin)-|',
-			'V:|-(margin)-[selButton]-(margin)-|',
+			'H:[allButton(==selButton)]-[selButton]-|',
+			'V:|-(8)-[allButton]-|',
+			'V:|-(8)-[selButton]-|',
 		]
-		metrics = {'margin': 10}
+
 		tab0.group1.addAutoPosSizeRules(rules, metrics)
 
 		rules = [
