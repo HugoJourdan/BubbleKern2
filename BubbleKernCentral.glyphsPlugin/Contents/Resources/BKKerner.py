@@ -335,7 +335,7 @@ class BubbleKernKerner(GeneralPlugin):
 	def permListDoubleClick(self, sender):  # when permutation list line has been double-clicked, open sheet
 		try:
 			permListUI = self.w.tabs[0].group0.permList
-			print(permListUI.get())
+			# print(permListUI.get())
 
 			groupText0 = sender[sender.getSelection()[0]]["Left"]
 			groupText1 = sender[sender.getSelection()[0]]["Right"]

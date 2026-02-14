@@ -263,26 +263,45 @@ class BubbleKernTool(SelectTool):
 	def start(self):  # WHEN GLYPHSAPP STARTS
 		pass
 
+	# @objc.python_method
+	# def initialDialog(self):
+	# 	try:
+	# 		alertTitle = 'Starting BubbleKern'
+	# 		alertMessage = """Are you sure you want to use BubbleKern in this font?
+	# 		(You can remove font's Bubble data from Edit > BubbleKern Kerner)"""
+	# 		initialise = show_alert(message = alertTitle, secondMessage = alertMessage)
+	# 	except:
+	# 		print(traceback.format_exc())
+
 	@objc.python_method
 	def activate(self):  # When the tool is activated, updateUI and set activeLayer
 		try:
 			proceed = False
 			initialise = False
 			f = Glyphs.font
-			use = f.userData['useBubbleKern']
-			if use != None: # BubbleKern already in use
+
+			# check if initial dialog is necessary
+			use = f.tempData['useBubbleKern'] # if user has already clicked Yes or Cancel in the dialog
+			if use == None: # if no pre-existing answer in userData
+				use = f.userData['useBubbleKern']
+
+			if use == True: # BubbleKern already in use
 				proceed = True
-			else: # on the first run per font file:
+			elif use == None: # on the first run per font file
 				alertTitle = 'Starting BubbleKern'
 				alertMessage = """Are you sure you want to use BubbleKern in this font?
 				(You can remove font's Bubble data from Edit > BubbleKern Kerner)"""
 				initialise = show_alert(message = alertTitle, secondMessage = alertMessage)
+			elif use == False:
+				Glyphs.showNotification("BubbleKern Tool", "If you want to use BubbleKern, please reopen the file.")
 
-			if proceed or initialise:
+			if proceed or initialise: # standard proceed
+				f.tempData['useBubbleKern'] = True
 				f.userData['useBubbleKern'] = True
 				Glyphs.addCallback(self.updateUI, UPDATEINTERFACE)
 				self.activeLayer = self.editViewController().activeLayer()
-			else: # Cancel has been clicked, go to Select Tool
+			else: # Cancel has been clicked or use is already False, go to Select Tool
+				f.tempData['useBubbleKern'] = False
 				self.deactivate()
 				f.tool = 'SelectTool'
 
@@ -615,13 +634,13 @@ class BubbleKernTool(SelectTool):
 		'''
 		# print('active current tool =', Glyphs.font.tool)
 		if Glyphs.font.tool == self.__class__.__name__: # 'BubbleKernTool'
-			# print('drawing active')
+			print('Drawing active layer', layer.parent)
 			self.drawBubbleWalls(layer, True, options)
 
 	def drawBackgroundForInactiveLayer_options_(self, layer, options): # run drawBubbleWalls()
 		# print('inactive current tool =', Glyphs.font.tool)
 		if Glyphs.font.tool == self.__class__.__name__: # 'BubbleKernTool'
-			# print('drawing inactive')
+			# print('Drawing inactive', layer.parent)
 			self.drawBubbleWalls(layer, False, options)
 
 	@objc.python_method
