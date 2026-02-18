@@ -324,9 +324,9 @@ class BubbleKernTool(SelectTool):
 	@objc.python_method
 	def setActiveLayer(self):
 		if self.editViewController() is None:
-			return None
+			return False
 		elif self.editViewController().activeLayer().name is None:
-			return None
+			return False
 		else:
 			self.activeLayer = self.editViewController().activeLayer()
 			return True
@@ -1035,33 +1035,33 @@ class BubbleKernTool(SelectTool):
 	# CALLED WHEN SELECT ALL HAS BEEN CALLED FROM THE APP
 	def selectAll_(self, sender):
 		try:
-			self.setActiveLayer()
-
-			if self.activeLayer.name is None:
+			if self.setActiveLayer() is False:
 				return
-			if self.activeLayer.isAligned:
+			layer = self.editViewController().activeLayer()
+
+			if layer.isAligned:
 				return
 
 			# layer.selection = [] # Reset selection
 
-			bubbles = self.activeLayer.tempData[TempDataBubblesKey]
+			bubbles = layer.tempData[TempDataBubblesKey]
 			nodesToAdd = []
-			# print('0 bubbles', layer, bubbles)
+			
 			for n in (bubbles.get(TempDataLeftNodesKey, []) + bubbles.get(TempDataRightNodesKey, [])):
 				n.selected = False
-			
+			# print('0 bubbles', layer, bubbles)
 			for side in (TempDataLeftNodesKey, TempDataRightNodesKey):
 				# SKIP IF INHERITING A (VALID) GLYPH
-				if side == TempDataLeftNodesKey and self.validateReferGlyph(self.activeLayer, 'L') == False:
+				if side == TempDataLeftNodesKey and self.validateReferGlyph(layer, 'L') == False:
 					nodesToAdd.extend(bubbles.get(side, []))
-				if side == TempDataRightNodesKey and self.validateReferGlyph(self.activeLayer, 'R') == False:
+				if side == TempDataRightNodesKey and self.validateReferGlyph(layer, 'R') == False:
 					nodesToAdd.extend(bubbles.get(side, []))
 
 			# print('2 nodesToAdd', layer, nodesToAdd)
 
 			# for n in nodesToAdd:
 			# 	n.selected = True
-			self.activeLayer.selection = nodesToAdd
+			layer.selection = nodesToAdd
 
 			Glyphs.redraw()
 		except:
