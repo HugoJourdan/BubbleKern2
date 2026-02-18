@@ -1,11 +1,13 @@
 # encoding: utf-8
 
-from GlyphsApp import GSLayer, GSPath
+from GlyphsApp import Glyphs, GSLayer, GSPath
 import traceback
 from Foundation import NSAffineTransform, NSPoint
-from AppKit import NSBezierPath
+from AppKit import NSBezierPath, NSTextField
+from Cocoa import NSAlert, NSAlertStyleCritical
 from dataclasses import dataclass, field
 from typing import Optional
+from math import ceil
 
 # THIS IS WHERE THE SHARED BACKEND CODE SHOULD BE STORED
 # SUCH AS CALCULATING THE BUBBLE SHAPE, DEALING WITH INHERITED (I.E. COMPONENT) BUBBLES.
@@ -24,6 +26,39 @@ class layerAttributes:
 	children: list["layerAttributes"] = field(default_factory=list)
 	refers: bool = False
 	depth: int = 0
+
+
+# UI STUFF FOR SHOWING DIALOG
+def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askString: bool = False):
+	alert = NSAlert.alloc().init()
+	alert.setMessageText_(message)
+	if secondMessage != '':
+		alert.setInformativeText_(secondMessage)
+
+	# --- Text field ---
+	if askString:
+		inputField = NSTextField.alloc().initWithFrame_(((0, 0), (240, 24)))
+		inputField.setStringValue_('')
+		alert.setAccessoryView_(inputField)
+
+	alert.addButtonWithTitle_("OK")  # index 1000
+	if cancel or askString:
+		alert.addButtonWithTitle_("Cancel")  # index 1001
+
+	if not askString: # not big triangle in askString message
+		alert.setAlertStyle_(NSAlertStyleCritical)
+
+	response = alert.runModal()
+	if response == 1000:  # OK
+		if askString:
+			text = field.stringValue().strip() # strip removes white spaces from both ends of str
+			if text:
+				return inputField.stringValue()
+			show_alert('Preset name cannot be empty or spaces only.', cancel=False)
+		return True
+	elif response == 1001:  # Cancel
+		return False
+
 
 # called from getFinalBubble()
 # def collectBubbleShapes(layer, theTransform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), depth=0) -> layerAttributes | None:
@@ -241,104 +276,102 @@ def segment_intersection(segment0, segment1):
 
 
 # build single bubble wall from multiple sources
-def getSingleBubbleWall(paths: list[GSPath], side):
+# def getSingleBubbleWall(paths: list[GSPath], side):
 
-	openPaths = [p for p in layer.paths if not p.closed]
+# 	openPaths = [p for p in layer.paths if not p.closed]
 
-	# add crossed nodes
-	intersections = []
-	allSegs = [seg for p1 in openPaths for seg in p1.segments]
-	for seg0 in allSegs:
-		for seg1 in allSegs:
-			try:
-				intersection = segment_intersection(seg0, seg1)
-				if intersection is not None:
-					intersections.append(intersection)
-			except:
-				traceback.print_exc()
-
-
-	# check if any node is leftmost?
-	leftmostNodes = []
-	for p in openPaths:  # vertical order not guaranteed
-		for n in p.nodes:
-			nodeInside = False
-			# segs = all segments in the path
-			segs = [seg for p1 in openPaths for seg in p1.segments]
-			for seg in segs:
-				segYs = (seg[0].y, seg[1].y)
-				if min(segYs) <= n.y <= max(segYs):  # if n within y bounds of segment
-					if orientation(seg[0], seg[1], n) < 0:  # 0 if on the line, right if more than 0
-						nodeInside = True
-
-			if not nodeInside:
-				leftmostNodes.append(n)
-
-	# sorting by verticality FROM BOTTOM; may not be necessary depending on the setup
-	leftmostNodes = sorted(leftmostNodes, key=lambda node: node.y)
+# 	# add crossed nodes
+# 	intersections = []
+# 	allSegs = [seg for p1 in openPaths for seg in p1.segments]
+# 	for seg0 in allSegs:
+# 		for seg1 in allSegs:
+# 			try:
+# 				intersection = segment_intersection(seg0, seg1)
+# 				if intersection is not None:
+# 					intersections.append(intersection)
+# 			except:
+# 				traceback.print_exc()
 
 
-	# check if there is any jump between paths
-	# if jumps across between open paths (i.e. jump to the edge of path)
-	# if jumps mid another path
-	nodesToAdd = []
-	for i, n in enumerate(leftmostNodes):  # checking from top to bottom
-		if i == 0:
-			continue
-		prevNode = leftmostNodes[i - 1]
-		thisPath, prevPath = n.parent, prevNode.parent
-		if thisPath != prevPath:  # jump ocurring
-			# print('jumping!', n.y, prevNode.y)
-			# gap between paths
-			prevPathTop = prevPath.bounds[0][1] + prevPath.bounds[1][1]
-			thisPathBtm = thisPath.bounds[0][1]
-			print(prevPathTop, thisPathBtm)
+# 	# check if any node is leftmost?
+# 	leftmostNodes = []
+# 	for p in openPaths:  # vertical order not guaranteed
+# 		for n in p.nodes:
+# 			nodeInside = False
+# 			# segs = all segments in the path
+# 			segs = [seg for p1 in openPaths for seg in p1.segments]
+# 			for seg in segs:
+# 				segYs = (seg[0].y, seg[1].y)
+# 				if min(segYs) <= n.y <= max(segYs):  # if n within y bounds of segment
+# 					if orientation(seg[0], seg[1], n) < 0:  # 0 if on the line, right if more than 0
+# 						nodeInside = True
 
-			if prevPathTop < thisPathBtm:  # open gap
-				# print('\topen or crossing?')
-				if n.x <= prevNode.x:  # current node is more right (inside)
-					nodesToAdd.append((i, NSPoint(prevNode.x, n.y)))
-				else:
-					nodesToAdd.append((i, NSPoint(n.x, prevNode.y)))
+# 			if not nodeInside:
+# 				leftmostNodes.append(n)
 
-			elif prevPathTop >= thisPathBtm:  # overlapping and touching
-				# print('\toverlapping')
-
-				segCandidates = (
-					# new node among the previous path
-					(prevNode, prevNode.prevNode, n),
-					(prevNode, prevNode.nextNode, n),
-					# new node among the current path
-					(n, n.prevNode, prevNode),
-					(n, n.nextNode, prevNode))
-				for seg in segCandidates:
-					if segmentOverlapCheck(seg):
-						#print('good one', seg)
-						newX = x_at_nodeYPos(seg[0], seg[1], seg[2])
-						if newX is not None:
-							nodesToAdd.append((i, NSPoint(newX, seg[2].y)))
-						break
+# 	# sorting by verticality FROM BOTTOM; may not be necessary depending on the setup
+# 	leftmostNodes = sorted(leftmostNodes, key=lambda node: node.y)
 
 
-	for n in reversed(nodesToAdd):
-		index, node = n
-		leftmostNodes.insert(index, node)
+# 	# check if there is any jump between paths
+# 	# if jumps across between open paths (i.e. jump to the edge of path)
+# 	# if jumps mid another path
+# 	nodesToAdd = []
+# 	for i, n in enumerate(leftmostNodes):  # checking from top to bottom
+# 		if i == 0:
+# 			continue
+# 		prevNode = leftmostNodes[i - 1]
+# 		thisPath, prevPath = n.parent, prevNode.parent
+# 		if thisPath != prevPath:  # jump ocurring
+# 			# print('jumping!', n.y, prevNode.y)
+# 			# gap between paths
+# 			prevPathTop = prevPath.bounds[0][1] + prevPath.bounds[1][1]
+# 			thisPathBtm = thisPath.bounds[0][1]
+# 			print(prevPathTop, thisPathBtm)
 
-	bp = NSBezierPath.alloc().init()
-	bp.moveToPoint_((leftmostNodes[0].x, leftmostNodes[0].y))
-	for n in leftmostNodes[1:]:
-		bp.lineToPoint_((n.x, n.y))
+# 			if prevPathTop < thisPathBtm:  # open gap
+# 				# print('\topen or crossing?')
+# 				if n.x <= prevNode.x:  # current node is more right (inside)
+# 					nodesToAdd.append((i, NSPoint(prevNode.x, n.y)))
+# 				else:
+# 					nodesToAdd.append((i, NSPoint(n.x, prevNode.y)))
 
-	return bp
+# 			elif prevPathTop >= thisPathBtm:  # overlapping and touching
+# 				# print('\toverlapping')
 
+# 				segCandidates = (
+# 					# new node among the previous path
+# 					(prevNode, prevNode.prevNode, n),
+# 					(prevNode, prevNode.nextNode, n),
+# 					# new node among the current path
+# 					(n, n.prevNode, prevNode),
+# 					(n, n.nextNode, prevNode))
+# 				for seg in segCandidates:
+# 					if segmentOverlapCheck(seg):
+# 						#print('good one', seg)
+# 						newX = x_at_nodeYPos(seg[0], seg[1], seg[2])
+# 						if newX is not None:
+# 							nodesToAdd.append((i, NSPoint(newX, seg[2].y)))
+# 						break
+
+
+# 	for n in reversed(nodesToAdd):
+# 		index, node = n
+# 		leftmostNodes.insert(index, node)
+
+# 	bp = NSBezierPath.alloc().init()
+# 	bp.moveToPoint_((leftmostNodes[0].x, leftmostNodes[0].y))
+# 	for n in leftmostNodes[1:]:
+# 		bp.lineToPoint_((n.x, n.y))
+
+# 	return bp
 
 # Called from outside; returns the singular bubble line (ideally)
 def getFinalBubble(layer, isLeft=True) -> NSBezierPath:
 	# look for the bubble information for all components
 	bubbleAttributes = gatherBubbleInfo(layer, isLeft=isLeft)
-	# print()
-	# print(layer.parent.name)
-	# print(bubbleAttributes)
+	# layerAttributes = (l, theTransform, children, refers, depth)
+
 	if bubbleAttributes:
 		bp = buildBubble(theAttributes=bubbleAttributes, isLeft=isLeft, bubblePath=None, inheritedTransforms=[], lastDepth=0)
 		# buildBubble contains multiple lines; need to get a single line
@@ -348,15 +381,144 @@ def getFinalBubble(layer, isLeft=True) -> NSBezierPath:
 			transform.translateXBy_yBy_(layer.width, 0)   # move by dx horizontally
 			bp.transformUsingAffineTransform_(transform)
 		return bp
+	return None
 
 	# emergency pass through
 	# side = nodesKeyL if isLeft else nodesKeyR
 	# nodes = layer.userData[nodesKeyL]
-	bubblePath = NSBezierPath.alloc().init()
+	# bubblePath = NSBezierPath.alloc().init()
 	# for i, n in enumerate(nodes):
 	# 	if i == 0:  # if first node
 	# 		bubblePath.moveToPoint_(NSPoint(n[0], n[1]))
 	# 	else:
 	# 		bubblePath.lineToPoint_(NSPoint(n[0], n[1]))
 	# 	return bubblePath
-	return bubblePath
+	# return bubblePath
+
+
+
+
+def x_at_y(p0, p1, y):
+	t = (y - p0.y) / (p1.y - p0.y)
+	return p0.x + t * (p1.x - p0.x)
+
+def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: int):
+	try:
+		# make iterable for both lines
+		lineA = []
+		for i in range(bubblePathL.elementCount()):
+			element = bubblePathL.elementAtIndex_associatedPoints_(i) # tuple of node type and node(s)
+			# elements = (nodeType, (point, point... up to 3 when it's a curve))
+			# lineA.append(element[1][0])
+			lineA.append(NSPoint(element[1][0].x-widthL, element[1][0].y))
+
+		lineB = []
+		for i in range(bubblePathR.elementCount()):
+			element = bubblePathR.elementAtIndex_associatedPoints_(i) # tuple of node type and node(s)
+			lineB.append(element[1][0])
+			# lineB.append(NSPoint(element[1][0].x, element[1][0].y))
+		
+		# print('lineA:', lineA)
+		# print('lineB:', lineB)
+
+		i = j = 0
+		min_dist = float("inf")
+
+		while i < len(lineA) - 1 and j < len(lineB) - 1:
+			a0, a1 = lineA[i], lineA[i + 1]
+			b0, b1 = lineB[j], lineB[j + 1]
+
+			# overlapping y-range
+			y_start = max(a0.y, b0.y)
+			y_end   = min(a1.y, b1.y)
+
+			if y_start <= y_end:
+				# evaluate at boundaries
+				for y in (y_start, y_end):
+					xa = x_at_y(a0, a1, y)
+					xb = x_at_y(b0, b1, y)
+					min_dist = min(min_dist, abs(xb - xa))
+
+			# advance the segment that ends first
+			if a1.y < b1.y:
+				i += 1
+			else:
+				j += 1
+
+		return min_dist
+	except:
+		print('getKernValue error: ', traceback.format_exc())
+		return float("inf")  # if error occurs, return infinite kern value to trigger fail-safe
+
+
+# KERN GENERATION LOGIC
+
+# 　function that rounds up the given number to nearest 10, used for applying minimal kernValue
+# I use this because kern value may be negative.
+def roundup(givenNumber):
+	return int(ceil(givenNumber / 10.0)) * 10
+
+
+def kernOpenType(presetName: str, selectedLayersOnly: bool):
+	try:
+		f = Glyphs.font
+		f.disableUpdateInterface()
+		m = f.selectedFontMaster
+
+		# build pairs list
+		presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"]
+		preset = presetsDic[presetName] # preset for use
+		pairsList = []
+		for perm in preset: # build pairsList
+			glyphsL = perm[0].split()
+			glyphsR = perm[1].split()
+			pairsList.extend([(L, R) for L in glyphsL for R in glyphsR if f.glyphs[L] and f.glyphs[R]])
+			if bool(perm[2]):
+				pairsList.extend([(R, L) for L in glyphsL for R in glyphsR if f.glyphs[L] and f.glyphs[R]])
+		pairsList = set(pairsList) # remove duplicates
+
+		if selectedLayersOnly: # reduce pairList size when selected glyphs only
+			# what if glyphs are refered to outside this list?
+			selectedGlyphNames = [s.parent.name for s in f.selectedLayers]
+			pairsList = {pair for pair in pairsList for gName in selectedGlyphNames if gName in pair} # making set
+
+		charsToUse = {glyph for pair in pairsList for glyph in pair} # set comprehension
+		bubblesDic = {} # list of bubbles used
+		#  bubblesDic > glyph.name > LB > height : value
+		# 							RB > height : value
+		for gn in charsToUse:
+			g = f.glyphs[gn]
+			if g is None:
+				continue
+			layer = g.layers[m.id]
+			bubblesDic[gn] = {}
+			# referred glyphs are all flattened ...
+			bubblesDic[gn]["LB"] = getFinalBubble( layer, isLeft = True )
+			bubblesDic[gn]["RB"] = getFinalBubble( layer, isLeft = False )
+
+		for pair in pairsList:
+			left, right = pair # glyph names
+			# I think bubblesDic is already cleared?
+			# if left not in bubblesDic or right not in bubblesDic:
+			# 	continue
+
+			widthL = f.glyphs[left].layers[m.id].width
+			# no more than half of the narrower glyph
+			maxKern = ( min(widthL, f.glyphs[right].layers[m.id].width,) / 2 - 1 )
+
+			# figure out the kern value here
+			# print(type(bubblesDic[left]["RB"]), type(bubblesDic[right]["LB"]), type(widthL))
+			kernValue = round(getKernValue(bubblesDic[left]['RB'], bubblesDic[right]['LB'], int(widthL)))
+
+			if kernValue < maxKern:
+				if abs(kernValue) >= 10:  # kerned as is if larger than 10 units
+					f.setKerningForPair(m.id, left, right, -kernValue)
+				elif 8 <= abs(kernValue) < 10:  # kerned 10 units if it's between 7 and 10
+					f.setKerningForPair(m.id, left, right, -roundup(kernValue))
+			else:  # activates fail-safe by using maxKern if kernValue is too large or infinite
+				f.setKerningForPair(m.id, left, right, -int(maxKern))
+
+			# THE END
+			f.enableUpdateInterface()
+	except:
+		print(traceback.format_exc())
