@@ -911,8 +911,15 @@ class BubbleKernTool(SelectTool):
 				objc.super(BubbleKernTool, self).mouseDown_(theEvent)
 				return
 
+			# objc.super(BubbleKernTool, self).mouseDown_(theEvent)
+
 			controller = self.editViewController()
 			graphicView = controller.graphicView()
+
+			# layer = graphicView.layerOfEvent_(theEvent)  # <- important improvement
+			# if not layer:
+			# 	objc.super(BubbleKernTool, self).mouseDown_(theEvent)
+			# 	return
 
 			if layer := graphicView.activeLayer():
 				m = layer.associatedFontMaster()
@@ -1037,6 +1044,7 @@ class BubbleKernTool(SelectTool):
 		try:
 			if self.setActiveLayer() is False:
 				return
+			
 			layer = self.editViewController().activeLayer()
 
 			if layer.isAligned:
@@ -1057,10 +1065,6 @@ class BubbleKernTool(SelectTool):
 				if side == TempDataRightNodesKey and self.validateReferGlyph(layer, 'R') == False:
 					nodesToAdd.extend(bubbles.get(side, []))
 
-			# print('2 nodesToAdd', layer, nodesToAdd)
-
-			# for n in nodesToAdd:
-			# 	n.selected = True
 			layer.selection = nodesToAdd
 
 			Glyphs.redraw()
