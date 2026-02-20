@@ -4,7 +4,7 @@ import objc
 import traceback
 from math import radians, tan, hypot
 import vanilla
-from GlyphsApp import Glyphs, GSLayer, GSCallbackHandler, distance, addPoints, UPDATEINTERFACE, DRAWBACKGROUND, DRAWINACTIVE
+from GlyphsApp import Glyphs, GSLayer, GSControlLayer, GSCallbackHandler, distance, addPoints, UPDATEINTERFACE, DRAWBACKGROUND, DRAWINACTIVE
 from GlyphsApp.plugins import SelectTool
 from Cocoa import (
 	NSObject,
@@ -226,25 +226,31 @@ class BubbleKernTool(SelectTool):
 		# USER INTERFACE
 		self.w = vanilla.Window((360, 10))
 		self.w.group = InspectorGroup("auto")
-		self.w.group.glyphNameL = vanilla.EditText('auto', '', callback=self.infoBox, placeholder='Copy glyph')
+		self.w.group.glyphNameL = vanilla.EditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
 		self.w.group.line = vanilla.VerticalLine('auto')
-		self.w.group.glyphNameR = vanilla.EditText('auto', '', callback=self.infoBox, placeholder='Copy glyph')
+		self.w.group.glyphNameR = vanilla.EditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
 		f0 = self.w.group.glyphNameL.getNSTextField()
 		f1 = self.w.group.glyphNameR.getNSTextField()
 		f0.setNextKeyView_(f1)
 		f1.setNextKeyView_(f0)
-		menuItems = [
+		menuItemsL = [
 			dict(title='Auto-Generate Bubble', callback=None),
-			dict(title='Decompose Refered', callback=None),
+			dict(title='Decompose Bubble', callback=self.decomposeBubbleL),
 			dict(title='Reset Bubble', callback=None),
-			dict(title='Erase Bubble', callback=self.eraseBubble),
+			dict(title='Show Compatibility', callback=None),
+			dict(title='Show Node Coordinates', callback=None)
+		]
+		menuItemsR = [
+			dict(title='Auto-Generate Bubble', callback=None),
+			dict(title='Decompose Bubble', callback=self.decomposeBubbleR),
+			dict(title='Reset Bubble', callback=None),
 			dict(title='Show Compatibility', callback=None),
 			dict(title='Show Node Coordinates', callback=None)
 		]
 		self.w.group.exportL = vanilla.CheckBox('auto', 'Export', callback=self.infoBox)
 		self.w.group.exportR = vanilla.CheckBox('auto', 'Export', callback=self.infoBox)
-		self.w.group.menusL = vanilla.ActionButton('auto', menuItems)
-		self.w.group.menusR = vanilla.ActionButton('auto', menuItems)
+		self.w.group.menusL = vanilla.ActionButton('auto', menuItemsL)
+		self.w.group.menusR = vanilla.ActionButton('auto', menuItemsR)
 		rules = (
 			'H:|-(pad)-[glyphNameL(glyphNameR)]-[line]-[glyphNameR]-(pad)-|',
 			'H:|-(pad)-[exportL]-[menusL]-[line]-[exportR]-[menusR]-(pad)-|',
@@ -312,6 +318,9 @@ class BubbleKernTool(SelectTool):
 						self.saveNodesToLayer(gl)
 						gl.userData['BubbleKernExportL'] = 1
 						gl.userData['BubbleKernExportR'] = 1
+				print('initialised bubbles for all layers')
+				self.loadNodesFromLayer(layer=self.activeLayer)
+				print('tempData:',self.activeLayer.tempData)
 		except:
 			print(traceback.format_exc())
 
@@ -324,6 +333,8 @@ class BubbleKernTool(SelectTool):
 	@objc.python_method
 	def setActiveLayer(self):
 		if self.editViewController() is None:
+			return False
+		elif self.editViewController().activeLayer() is None:
 			return False
 		elif self.editViewController().activeLayer().name is None:
 			return False
@@ -344,7 +355,7 @@ class BubbleKernTool(SelectTool):
 	@objc.python_method
 	def updateUI(self, theEvent):  # Fill UI fields from userData after Interface change
 		try:
-			if self.setActiveLayer() is None:
+			if self.setActiveLayer() is False:
 				return
 			layer = self.activeLayer
 			value = layer.userData['BubbleKernReferL']
@@ -380,7 +391,7 @@ class BubbleKernTool(SelectTool):
 
 	@objc.python_method
 	def saveInfoToLayer(self, layer):  # CALLED AFTER UI CHANGE. SAVES "INHERIT" AND "EXPORT" STATUS TO LAYER USERDATA
-		if layer.name is None:
+		if layer == None or layer.name is None:
 			return
 		
 		# SAVE INTERFACE'S GLYPH NAME, L
@@ -402,6 +413,7 @@ class BubbleKernTool(SelectTool):
 			value = None
 		if layer.userData['BubbleKernReferR'] is not value:
 			del layer.tempData[TempDataBubblesKey]
+
 		if value:
 			layer.userData['BubbleKernReferR'] = value
 		else:
@@ -423,6 +435,8 @@ class BubbleKernTool(SelectTool):
 
 	@objc.python_method
 	def saveNodesToLayer(self, layer):  # SAVES NODES TO LAYER USERDATA
+		if layer == None or layer.name is None:
+			return
 		m = layer.master
 		italicAngle, xHeight = m.italicAngle, m.xHeight
 		bubbles = layer.tempData[TempDataBubblesKey]  # bubble tempData may not exist yet
@@ -443,7 +457,7 @@ class BubbleKernTool(SelectTool):
 			# del layer.userData['BubbleKernNodesL']
 			layer.userData['BubbleKernNodesL'] = [(0, m.descender), (0, m.ascender)]
 
-		# RIGHT SIDE SHOULD SUBTRACT LAYER WIFTH
+		# RIGHT SIDE SHOULD SUBTRACT LAYER WIDTH
 		value = bubbles[TempDataRightNodesKey] if bubbles else None
 		if value:
 			value = sorted(value, key=lambda node: node.y)  # SORT NODES BY HEIGHT
@@ -463,10 +477,21 @@ class BubbleKernTool(SelectTool):
 	@objc.python_method
 	def loadNodesFromLayer(self, layer=None, forceLoad=False, master=None) -> dict | None:
 		try:
-			if layer.name is None:
+			# shadow layer is GSLayer whose name is None: need to pass
+			# need to pass line break glyph
+			# print('layer:', layer)
+			# print('layer.name:', layer.name)
+			# print('is GSLayer?', isinstance(layer, GSLayer))
+			# print('is GSControlLayer?', isinstance(layer, GSControlLayer))
+			# print('is NSKVONotifying_GSLayer?', isinstance(layer, objc.lookUpClass('NSKVONotifying_GSLayer')))
+
+			# if layer is None or type(layer) != GSLayer:
+			# if layer == None or layer.name is None:
+			if isinstance(layer, GSLayer) == False:
+				# print('Failed layer check')
 				return None
 				# layer = self.editViewController().activeLayer()
-
+			# print('after layer check')
 			bubbles: dict | None = layer.tempData[TempDataBubblesKey]  # i.e. ['bubbles']
 			if not forceLoad:
 				if bubbles:
@@ -533,7 +558,7 @@ class BubbleKernTool(SelectTool):
 
 		# if Glyphs.isActive() is False: # SKIP DRAWING IF GLYPHS IS NOT IN FRONT. REALLY NECESSARY?
 		# 	return
-		if Glyphs.font.tool != self.__class__.__name__ or layer.name is None:  # 'BubbleKernTool'
+		if Glyphs.font.tool != self.__class__.__name__ or layer == None or layer.name is None:  # 'BubbleKernTool'
 			return
 		try:
 			graphicView = self.editViewController().graphicView()
@@ -604,9 +629,8 @@ class BubbleKernTool(SelectTool):
 					if n in layer.selection:
 						newX = tempToUserNodeX(n.x, n.y, layer.master.italicAngle, layer.master.xHeight)
 						newX = newX - bubbles['width'] if n in nodesR else newX
-						coordinates = f'{int(round(newX))}, {int(round(n.y))}'
 						displayText = NSAttributedString.alloc().initWithString_attributes_(
-							coordinates,
+							f'{int(round(newX))}, {int(round(n.y))}',
 							fontAttributes
 						)
 						# if coordinatesOption == 0: # show at bottom left
@@ -628,6 +652,15 @@ class BubbleKernTool(SelectTool):
 				path.setLineWidth_(1 / scale)
 				path.stroke()
 
+				# coordinate for the selectable node
+				displayText = NSAttributedString.alloc().initWithString_attributes_(
+					f'{int(round(n[0])-layer.width)}, {int(round(n[1]))}',
+					fontAttributes
+				)
+				textAlignment = 0
+				displayLocation = NSPoint(n[0] + 10, n[1] + 10)
+				displayText.drawAtPoint_alignment_(displayLocation, textAlignment)
+
 		except:
 			print(traceback.print_exc())
 
@@ -639,20 +672,20 @@ class BubbleKernTool(SelectTool):
 		}
 		'''
 		# print('active current tool =', Glyphs.font.tool)
-		if Glyphs.font.tool == self.__class__.__name__ and layer.name is not None: # 'BubbleKernTool'
+		if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
 			# print('Drawing active layer', layer.parent)
 			self.drawBubbleWalls(layer, True, options)
 
 	def drawBackgroundForInactiveLayer_options_(self, layer, options):  # run drawBubbleWalls()
 		# print('inactive current tool =', Glyphs.font.tool)
-		if Glyphs.font.tool == self.__class__.__name__ and layer.name is not None: # 'BubbleKernTool'
+		if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
 			# print('Drawing inactive', layer.parent)
 			self.drawBubbleWalls(layer, False, options)
 
 	@objc.python_method
 	def drawBubbleWalls(self, layer, active, drawOptions):  # draws the bubble
 		try:
-			if layer.name is None:
+			if layer ==None or layer.name is None:
 				return
 			if layer.isAligned:  # IF COMPONENTS ARE AUTO-ALIGNED. DRAW PRE-COMPOSED BUBBLES
 				pass
@@ -677,24 +710,17 @@ class BubbleKernTool(SelectTool):
 						color = NSColor.systemPinkColor().colorWithAlphaComponent_(0.5)
 					color.set()
 
-					# MAYBE SUBSTITUTE WITH COMMON LOGIC CODE (NOT FINISHED)
-					# nodes = bubbles.get(side)
-					# if nodes:
-					# 	bubblePath = NSBezierPath.alloc().init()
-					# 	for i, n in enumerate(nodes):
-					# 		if i == 0:  # if first node
-					# 			bubblePath.moveToPoint_(n.pos)
-					# 		else:
-					# 			bubblePath.lineToPoint_(n.pos)
-					# 	if active is True:  # WHEN IN BACKGROUND
-					# 		bubblePath.setLineWidth_(1.5 / scale)
-					# 	else:
-					# 		bubblePath.setLineWidth_(1 / scale)
-					# 	bubblePath.stroke()
 
 					isLeft = True if side == TempDataLeftNodesKey else False
-					bubblePath = getFinalBubble(layer, isLeft)
-					
+					bubblePath = getFinalBubble(layer, isLeft)					
+					if bubblePath is None:
+						return
+
+					key = 'BubbleKernRefer' + ('L' if isLeft else 'R')
+					if layer.userData[key] is not None:  # if referring to other glyph, draw dashed line
+						dashPattern = [3 / scale, 3 / scale]  # draw 4pt, skip 2pt (repeat)
+						bubblePath.setLineDash_count_phase_(dashPattern, len(dashPattern), 0)
+
 					if active is True:  # WHEN IN BACKGROUND
 						bubblePath.setLineWidth_(1.5 / scale)
 					else:
@@ -713,9 +739,9 @@ class BubbleKernTool(SelectTool):
 			scale = graphicView.scale()
 
 			layer = graphicView.activeLayer()
-			if layer.name is None:
+			if layer == None or layer.name is None:
 				return
-
+			# print(layer)
 			mousePos = graphicView.getActiveLocation_(theEvent)  # pos relative to active layer
 			mpx, mpy = mousePos.x, mousePos.y
 			clickRadiusAbsolute = clickRadius / scale  # click radius
@@ -849,9 +875,10 @@ class BubbleKernTool(SelectTool):
 		# self._mouseDownPos = graphicView.getActiveLocation_(theEvent)
 		# clickPosition = graphicView.getActiveLocation_(theEvent)
 		# print(self._mouseDownPos)
-
+		print('checkpoint 0')
 		if not shadowBubbles:
 			return
+		print('checkpoint 1')
 		didChangeAnything = False
 		_, _, referL, referR = self.infoForLayer(layer)
 		for side in (TempDataLeftNodesKey, TempDataRightNodesKey):
@@ -860,6 +887,7 @@ class BubbleKernTool(SelectTool):
 			if side is TempDataRightNodesKey and referR:
 				continue
 
+			print('checkpoint 3')
 			nodes = bubbles.get(side, [])
 			shadowNodes = shadowBubbles.get(side, [])
 			# print(layer.parent.name)
@@ -879,6 +907,7 @@ class BubbleKernTool(SelectTool):
 				node.pos = NSPoint(round(pos.x), round(pos.y))
 				didChangeAnything = True
 			# print(bubbles)
+		print('checkpoint 5')
 		if didChangeAnything:
 			# print('redrawing')
 			# controller.redraw()
@@ -896,13 +925,6 @@ class BubbleKernTool(SelectTool):
 			Glyphs.redraw()
 		except:
 			print("mouseUp_ error: " + traceback.format_exc())
-
-	# def mouseUp_(self, theEvent):
-	# 	graphicView = self.editViewController().graphicView()
-	# 	if layer := graphicView.activeLayer():
-	# 		self.saveNodesToLayer(self.activeLayer)
-	# 		self.loadNodesFromLayer(self.activeLayer, forceLoad=True)
-	# 		print('mouseUp_', self.activeLayer)
 
 	def mouseDown_(self, theEvent):
 		try:
@@ -1019,7 +1041,9 @@ class BubbleKernTool(SelectTool):
 				return False
 
 			gName = self.activeLayer.userData['BubbleKernRefer' + side]
-			font = layer.font
+			font = layer.font()
+			# print('font:', font)
+			# print('gName:', gName)
 			if not font.glyphs[gName]:  # REFERRED GLYPH NAME IS INVALID
 				return False
 
@@ -1066,10 +1090,9 @@ class BubbleKernTool(SelectTool):
 					nodesToAdd.extend(bubbles.get(side, []))
 
 			layer.selection = nodesToAdd
-
 			Glyphs.redraw()
 		except:
-			print(traceback.print_exc())
+			print('selectAll_ error:', traceback.format_exc())
 
 	def alignPoints_(self, sender):
 		alignment = alignment = Glyphs.defaults["GSTransformGridCorner"]
@@ -1138,17 +1161,51 @@ class BubbleKernTool(SelectTool):
 			controller.redraw()
 
 	@objc.python_method
-	def eraseBubble(self, sender):  # CALLED FROM INFO BOX; REMOVES BUBBLE FROM A LAYER. MOVE TO COMMON LOGIC?
+	def decomposeBubbleL(self, sender):
+		self.decomposeBubble(isLeft=True)
+	
+	@objc.python_method
+	def decomposeBubbleR(self, sender):
+		self.decomposeBubble(isLeft=False)
+
+	@objc.python_method
+	def decomposeBubble(self, isLeft):  # CALLED FROM INFO BOX; decompose referenced bubble & remove reference
 		try:
-			ud = self.activeLayer.userData
-			if sender == self.w.group.menusL:
-				bubbleKeys = ('BubbleKernReferL', 'BubbleKernExportL', 'BubbleKernNodesL')
-			else:
-				bubbleKeys = ('BubbleKernReferR', 'BubbleKernExportR', 'BubbleKernNodesR')
-			for key in bubbleKeys:
-				del ud[key]
+			if self.setActiveLayer() is False:
+				return
+			self.activeLayer.parent.beginUndo()  # begin undo for the whole operation
+
+			# need to check if the bubble is from a reference or not, because if it's from a reference, we need to get the bubble path from the referred layer instead of the active layer
+			# or the menu item should be disabled in the first place
+
+			m = self.activeLayer.master
+			bubblePath = getFinalBubble(self.activeLayer, isLeft)
+
+			width = self.activeLayer.width if isLeft == False else 0
+			bubbleDataTemp = []
+			for i in range(bubblePath.elementCount()):
+				element = bubblePath.elementAtIndex_associatedPoints_(i) # tuple of node type and node(s)
+				n = element[1][0]
+				# bubbleDataTemp.append(NSPoint(element[1][0].x-width, element[1][0].y))
+				bubbleDataTemp.append(((tempToUserNodeX(n.x-width, n.y, m.italicAngle, m.xHeight), int(round(n.y)))))
+
+			# save nodes to userData
+			key = 'BubbleKernNodes' + ('L' if isLeft else 'R')
+			# bubbleDataTemp1 = []
+			# for n in bubbleDataTemp0:
+			# 	bubbleDataTemp1.append( ( tempToUserNodeX(n.x, n.y, m.italicAngle, m.xHeight), int(round(n.y)) ) )
+			self.activeLayer.userData[key] = bubbleDataTemp
+
+			# remove reference
+			referKey = 'BubbleKernRefer' + ('L' if isLeft else 'R')
+			del self.activeLayer.userData[referKey]
+			
+			self.loadNodesFromLayer(self.activeLayer, forceLoad=True)  # reload tempData from userData to reflect the decomposed bubble
+	
+			self.activeLayer.parent.endUndo()  # end undo
+			Glyphs.redraw()
 		except:
-			pass
+			print('decomposeBubble error:', traceback.format_exc())
 
 	@objc.python_method
 	def __file__(self):

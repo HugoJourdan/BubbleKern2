@@ -6,6 +6,7 @@ from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
 import re  # for displaying font file name
+import threading # for managing progress bar
 import time # for managing progress bar
 from typing import Optional, Any
 from Foundation import NSMutableDictionary
@@ -450,6 +451,11 @@ class BubbleKernKerner(GeneralPlugin):
 
 	@objc.python_method
 	def permListSelected(self, sender):  # when permutation list line has been selected
+		groupView = self.w.tabs[0].group0.getNSView()
+		if len(groupView.subviews()) <= 1:
+			# I want to avoid sender being not ready on the first run
+			# 1 means only Popup has been loaded, and the list is not ready yet
+			return
 		self.refreshPreview()
 
 	@objc.python_method
@@ -665,13 +671,11 @@ class BubbleKernKerner(GeneralPlugin):
 			self.w.tabs[0].group1.progress.set(0)
 			self.w.tabs[0].group1.progress.show(True)
 
-			BKCommonLogic.kernOpenType(presetName = self.loadedPresetName, selectedLayersOnly= selGlyphs)
+			for progress in BKCommonLogic.kernOpenType(presetName = self.loadedPresetName, selectedLayersOnly = selGlyphs):
 
-			for i in range(100):
-				self.w.tabs[0].group1.progress.increment(1)
-				time.sleep(.01)
-			
-			# ended; hide progress bar
+				# time.sleep(.01)
+				self.w.tabs[0].group1.progress.set(progress)
+
 			time.sleep(.5)
 			self.w.tabs[0].group1.progress.show(False)
 

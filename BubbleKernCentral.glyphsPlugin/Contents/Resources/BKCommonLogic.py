@@ -399,7 +399,10 @@ def getFinalBubble(layer, isLeft=True) -> NSBezierPath:
 
 
 def x_at_y(p0, p1, y):
-	t = (y - p0.y) / (p1.y - p0.y)
+	if p1.y == p0.y:
+		t = y - p0.y
+	else:
+		t = (y - p0.y) / (p1.y - p0.y)
 	return p0.x + t * (p1.x - p0.x)
 
 def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: int):
@@ -496,7 +499,15 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 			bubblesDic[gn]["LB"] = getFinalBubble( layer, isLeft = True )
 			bubblesDic[gn]["RB"] = getFinalBubble( layer, isLeft = False )
 
-		for pair in pairsList:
+		pairsCount = len(pairsList)
+		previousProgress = 0
+		for i, pair in enumerate(pairsList):
+			# for progress bar update
+			currentProgress = round(100*i/pairsCount)
+			if currentProgress > previousProgress:
+				previousProgress = currentProgress
+				yield currentProgress
+
 			left, right = pair # glyph names
 			# I think bubblesDic is already cleared?
 			# if left not in bubblesDic or right not in bubblesDic:
