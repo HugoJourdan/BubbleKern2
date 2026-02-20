@@ -9,7 +9,7 @@ import re  # for displaying font file name
 import threading # for managing progress bar
 import time # for managing progress bar
 from typing import Optional, Any
-from Foundation import NSMutableDictionary
+from Foundation import NSMutableDictionary, NSLog
 
 from AppKit import (
 	NSMenuItem,
@@ -666,6 +666,8 @@ class BubbleKernKerner(GeneralPlugin):
 	@objc.python_method
 	def BubbleKernMain(self, sender):  # generate kerning
 		try:
+			self.font.disableUpdateInterface()
+
 			selGlyphs = True if sender == self.w.tabs[0].group1.selButton else False
 
 			self.w.tabs[0].group1.progress.set(0)
@@ -679,6 +681,7 @@ class BubbleKernKerner(GeneralPlugin):
 			time.sleep(.5)
 			self.w.tabs[0].group1.progress.show(False)
 
+			self.font.enableUpdateInterface()
 		except:
 			print(traceback.format_exc())
 
