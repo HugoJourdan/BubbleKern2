@@ -1049,9 +1049,9 @@ class BubbleKernTool(SelectTool):
 			if self.setActiveLayer() is False:
 				return
 			# logger.debug('checkpoint selectAll 1')
-			# layer = self.editViewController().activeLayer()
-			selectedIndex = self.activeLayer.font().currentTab.layersCursor
-			layer = self.editViewController().layers[selectedIndex]
+			layer = self.editViewController().activeLayer()
+			# selectedIndex = self.activeLayer.font().currentTab.layersCursor
+			# layer = self.editViewController().layers[selectedIndex]
 			# print('checkpoint layer:', layer)
 			# layer = self.activeLayer.font().selectedLayers[0]  # makes no difference.
 			# print(self.activeLayer.font().currentTab.layersCursor)
