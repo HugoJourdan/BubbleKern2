@@ -1,21 +1,21 @@
 from __future__ import division, print_function, unicode_literals
 
 import objc
-from GlyphsApp import Glyphs, GSLayer, GSGlyph, GSCallbackHandler, EDIT_MENU
+from GlyphsApp import Glyphs, GSLayer, GSGlyph, EDIT_MENU #, GSCallbackHandler
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
 import re  # for displaying font file name
-import threading # for managing progress bar
+# import threading # for managing progress bar
 import time # for managing progress bar
 from typing import Optional, Any
-from Foundation import NSMutableDictionary, NSLog
+from Foundation import NSMutableDictionary #, NSLog
 
 from AppKit import (
 	NSMenuItem,
 	NSImage,  # for setting plus and minus button image
 	NSFont,  # for setting preview in Menlo
-	NSDragOperationMove,  # currently useless
+	# NSDragOperationMove,  # currently useless
 	NSFloatingWindowLevel,
 )
 
@@ -65,9 +65,9 @@ class BubbleKernKerner(GeneralPlugin):
 		self.w = vanilla.Window(
 			(230, 500),
 			# minSize=(200, 300),
-			maxSize = (2000, 2000),
-			title = 'BubbleKern Kerner',
-			autosaveName = "com.Tosche.BubbleKernKerner.mainwindow"  # stores last window position and size
+			maxSize=(2000, 2000),
+			title='BubbleKern Kerner',
+			autosaveName="com.Tosche.BubbleKernKerner.mainwindow"  # stores last window position and size
 		)
 
 		self.w.bind("should close", self.windowShouldClose_)
@@ -112,15 +112,15 @@ class BubbleKernKerner(GeneralPlugin):
 					"editable": True,
 					"width": 70},
 				{"title": "Pairs", "identifier": "Pairs", "width": 60},
-				],
-			dragSettings = dragSettings,
-			dropSettings = dropSettings,
-			autohidesScrollers = True,
-			allowsEmptySelection = False,
-			allowsMultipleSelection = False,
-			selectionCallback = self.permListSelected,
-			editCallback = self.checkBoxClicked,
-			doubleClickCallback = self.permListDoubleClick,
+			],
+			dragSettings=dragSettings,
+			dropSettings=dropSettings,
+			autohidesScrollers=True,
+			allowsEmptySelection=False,
+			allowsMultipleSelection=False,
+			selectionCallback=self.permListSelected,
+			editCallback=self.checkBoxClicked,
+			doubleClickCallback=self.permListDoubleClick,
 		)
 
 		tableView = tab0.group0.permList._tableView
@@ -160,7 +160,7 @@ class BubbleKernKerner(GeneralPlugin):
 		metrics = {'iconButtonW': 40, 'iconButtonH': 24}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
 
-		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue = 100)
+		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
 		tab0.group1.progress.show(False)
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
@@ -258,7 +258,7 @@ class BubbleKernKerner(GeneralPlugin):
 
 			elif index == presetsDicLength + 2: # delete
 				if len(self.presetsDic) <= 1: # only one or zero preset to delete
-					BKCommonLogic.show_alert(f"You can't delete the last preset.", cancel=False)
+					BKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
 					self.w.tabs[0].group0.optionsPopup.set(0)
 				else:
 					deleting = BKCommonLogic.show_alert(f'Are you sure you want to delete "{self.loadedPresetName}"?')
@@ -288,7 +288,7 @@ class BubbleKernKerner(GeneralPlugin):
 			menu.itemAtIndex_(len(self.presetsDic)).setEnabled_(False)  # disable separator
 
 			# set selection to the loaded preset
-			thePopup.set( presetsDicNames.index(self.loadedPresetName) )
+			thePopup.set(presetsDicNames.index(self.loadedPresetName))
 
 		except Exception as e:
 			Glyphs.showMacroWindow()
@@ -367,27 +367,27 @@ class BubbleKernKerner(GeneralPlugin):
 			print("BubbleKern Error (loadPreferences):", traceback.format_exc())
 
 	@objc.python_method
-	def savePreferences(self, option = 0): # 0=save, 1=delete, 2=new
+	def savePreferences(self, option=0): # 0=save, 1=delete, 2=new
 		# rewrite as if it's called every time permList is dragged, or list content edited
 		try:
 			if option == 1: # deleting the selected preset
-				del self.presetsDic[ self.loadedPresetName ]
+				del self.presetsDic[self.loadedPresetName]
 				self.loadedPresetName = None
 				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
 				# need to load something
 				self.loadPreferences()
 			elif option == 2: # making new list
-				self.presetsDic[ self.loadedPresetName ] = [('A B C', 'X Y Z', True)]
+				self.presetsDic[self.loadedPresetName] = [('A B C', 'X Y Z', True)]
 			else: # saving
 				permList = self.w.tabs[0].group0.permList.get()
 				perms = []
 				for item in permList: # for each line
 					perm = []
-					perm.append( item['Left'] )
-					perm.append( item['Right'] )
-					perm.append( item['Add Flipped'] )
-					perms.append( perm )
-				self.presetsDic[ self.loadedPresetName ] = perms
+					perm.append(item['Left'])
+					perm.append(item['Right'])
+					perm.append(item['Add Flipped'])
+					perms.append(perm)
+				self.presetsDic[self.loadedPresetName] = perms
 
 			Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
 		except:
@@ -561,7 +561,7 @@ class BubbleKernKerner(GeneralPlugin):
 			# self.dragIndex = index # index of item being dragged
 			permList = self.w.tabs[0].group0.permList
 			listItems = permList.get()
-			
+
 			# determine if BezierPath is being dragged
 			# if 'BezierPath' in listItems[index]:
 			# 	indexes = [index]
@@ -574,10 +574,10 @@ class BubbleKernKerner(GeneralPlugin):
 			# 	indexes = [index]
 
 			indexes = [index]
-			
+
 			typesAndValues = {
-				"str" : permList.get()[index],
-				"Tosche.BubbleKernKerner.permListIndexes" : indexes
+				"str": permList.get()[index],
+				"Tosche.BubbleKernKerner.permListIndexes": indexes
 			}
 			return typesAndValues
 		except:
@@ -595,13 +595,13 @@ class BubbleKernKerner(GeneralPlugin):
 		return "copy"
 
 	@objc.python_method
-	def performDropCallback(self, info): 
+	def performDropCallback(self, info):
 		try:
 			sender = info["sender"]
 			source = info["source"]
 			endIndex = info["index"] # proposed drop index
 			items = info["items"]
-			
+
 			permList = self.w.tabs[0].group0.permList
 
 			# reorder
@@ -636,7 +636,7 @@ class BubbleKernKerner(GeneralPlugin):
 		try:
 			permList = self.w.tabs[0].group0.permList
 			listToSet = permList.get()
-			listToSet += [{'Left':'A B C','Right':'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
+			listToSet += [{'Left': 'A B C', 'Right': 'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
 			permList.set(listToSet)
 
 			# enable delButton if there's multiple: maybe move elsewhere
@@ -673,7 +673,7 @@ class BubbleKernKerner(GeneralPlugin):
 			self.w.tabs[0].group1.progress.set(0)
 			self.w.tabs[0].group1.progress.show(True)
 
-			for progress in BKCommonLogic.kernOpenType(presetName = self.loadedPresetName, selectedLayersOnly = selGlyphs):
+			for progress in BKCommonLogic.kernOpenType(presetName=self.loadedPresetName, selectedLayersOnly=selGlyphs):
 
 				# time.sleep(.01)
 				self.w.tabs[0].group1.progress.set(progress)
@@ -706,7 +706,7 @@ class BubbleKernKerner(GeneralPlugin):
 		'''
 
 	@objc.python_method
-	def removeBubbles(self, sender): 
+	def removeBubbles(self, sender):
 		try:
 			self.font
 			del self.font.userData['useBubbleKern']
