@@ -4,7 +4,7 @@ import objc
 import traceback
 from math import radians, tan, hypot
 import vanilla
-from GlyphsApp import Glyphs, GSLayer, GSControlLayer, GSCallbackHandler, distance, addPoints, UPDATEINTERFACE, DRAWBACKGROUND, DRAWINACTIVE
+from GlyphsApp import Glyphs, GSLayer, GSControlLayer, GSCallbackHandler, distance, addPoints, UPDATEINTERFACE, DRAWINACTIVE # , DRAWBACKGROUND
 from GlyphsApp.plugins import SelectTool
 from Cocoa import (
 	NSObject,
@@ -207,7 +207,7 @@ class BubbleKernTool(SelectTool):
 		global mainDrawingHandler
 		if mainDrawingHandler is None:
 			mainDrawingHandler = self
-			GSCallbackHandler.addCallback_forOperation_(mainDrawingHandler, DRAWBACKGROUND)
+			#GSCallbackHandler.addCallback_forOperation_(mainDrawingHandler, DRAWBACKGROUND)
 			GSCallbackHandler.addCallback_forOperation_(mainDrawingHandler, DRAWINACTIVE)
 
 		self.name = Glyphs.localize({
@@ -639,9 +639,9 @@ class BubbleKernTool(SelectTool):
 		}
 		'''
 		# logger.debug('active current tool =', Glyphs.font.tool)
-		if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
-			# logger.debug('Drawing active layer', layer.parent)
-			self.drawBubbleWalls(layer, True, options)
+		#if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
+		# logger.debug('Drawing active layer', layer.parent)
+		self.drawBubbleWalls(layer, True, options)
 
 	def drawBackgroundForInactiveLayer_options_(self, layer, options):  # run drawBubbleWalls()
 		# logger.debug('inactive current tool =', Glyphs.font.tool)
