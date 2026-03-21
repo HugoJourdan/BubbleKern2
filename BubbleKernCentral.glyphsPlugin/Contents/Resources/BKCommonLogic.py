@@ -7,7 +7,7 @@ from AppKit import NSBezierPath, NSTextField
 from Cocoa import NSAlert, NSAlertStyleCritical
 from dataclasses import dataclass, field
 from typing import Optional
-from math import ceil
+from math import ceil, radians, tan
 
 # THIS IS WHERE THE SHARED BACKEND CODE SHOULD BE STORED
 # SUCH AS CALCULATING THE BUBBLE SHAPE, DEALING WITH INHERITED (I.E. COMPONENT) BUBBLES.
@@ -17,6 +17,32 @@ referKeyR = 'BubbleKernReferR'
 nodesKeyL = 'BubbleKernNodesL'
 nodesKeyR = 'BubbleKernNodesR'
 defaultTransform = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+
+
+# LOGGING
+import logging
+import os
+
+def _setup_logger():
+	logger = logging.getLogger("BubbleKern")
+
+	if logger.handlers:
+		return logger  # already configured (important for Glyphs reload)
+
+	logger.setLevel(logging.DEBUG)
+	log_path = os.path.expanduser("~/Desktop/Glyphs_BubbleKern.log")
+	handler = logging.FileHandler(log_path)
+	formatter = logging.Formatter("%(asctime)s BubbleKern: %(message)s")
+	handler.setFormatter(formatter)
+	logger.addHandler(handler)
+	logger.propagate = False  # prevents double logging
+	return logger
+
+def log(message:str = '', error: bool = None):
+	level = logging.ERROR if error is None else logging.DEBUG
+	_setup_logger().log(level, message)
+# / LOGGING
+
 
 @dataclass()
 class layerAttributes:
@@ -59,6 +85,14 @@ def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askSt
 	elif response == 1001:  # Cancel
 		return False
 
+# called from BKTool when getting node position for display; converts tempData's node x to userData's node x for display and storage
+# also from buildBubble()
+def tempToUserNodeX(x, y, italicAngle, xHeight):
+	if italicAngle != 0:
+		italicAngle = radians(90 - italicAngle)
+		return x - (y - xHeight / 2) / tan(italicAngle)
+	else:
+		return x
 
 # called from getFinalBubble()
 # def collectBubbleShapes(layer, theTransform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), depth=0) -> layerAttributes | None:
@@ -94,38 +128,39 @@ def gatherBubbleInfo(layer, theTransform=defaultTransform, refers=False, depth=0
 		# match=True without a bubble; return None
 		return None
 	except:
-		print('gatherBubbleInfo error: ', traceback.format_exc())
+		log(f'gatherBubbleInfo error: {traceback.format_exc()}', error=True)
 
 # called from getFinalBubble()
 # using layer & bubble info obtained from gatherBubbleInfo(), put all bubbles into one layer
-def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms=[], lastDepth=0) -> NSBezierPath:
+def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms=None) -> NSBezierPath:
 	# RECEIVES BUBBLE ATTRIBUTES AND PATH TO BUILD A BUBBLE.
 	# MODIFIES bubblePath DIRECTLY.
 
-	# FIRST RUN
 	if bubblePath is None:
 		bubblePath = NSBezierPath.alloc().init()
+	if inheritedTransforms is None:
+		inheritedTransforms = []
 	try:
-		# print()
+		currentTransforms = list(inheritedTransforms)
+		if theAttributes.transform is not None:
+			currentTransforms.append(theAttributes.transform)
+
 		# indent = '\t' * theAttributes.depth
-		# print(f'{indent}buildBubble working on {theAttributes.layer.parent.name}')
-		# print(f'{indent}', theAttributes)
-		if theAttributes.children != []:  # IF THERE ARE REFERENCES OR COMPONENTS
-			# print(f'{indent}component or reference found')
-			for child in theAttributes.children:  # c = ANOTHER ATTRIBUTE
-				if theAttributes.transform is not None:
-					inheritedTransforms.append(theAttributes.transform)
-
-					# Potential fix point
-					bubblePath.appendBezierPath_(buildBubble(child, isLeft, bubblePath, inheritedTransforms))
+		# log(f'{indent}buildBubble working on {theAttributes.layer.parent.name}')
+		# log(f'{indent} {theAttributes}')
+		if theAttributes.children:  # IF THERE ARE REFERENCES OR COMPONENTS
+			for child in theAttributes.children:
+				buildBubble(child, isLeft, bubblePath, currentTransforms)
 		# else:
-			# print(f'{indent}reference/components not found in {theAttributes.layer.parent.name}')
-
-		currentDepth = theAttributes.depth
+			# log(f'{indent}reference/components not found in {theAttributes.layer.parent.name}')
 
 		if theAttributes.refers is False:  # if path or component; no referred glyphs
-			# print(f'{indent}adding bubble paths')
+			# log(f'{indent}adding bubble paths')
 			bubbleLayer = theAttributes.layer  # THE BUBBLE
+			m = bubbleLayer.associatedFontMaster()
+			italicAngle = -m.italicAngle if m else 0
+			localPath = NSBezierPath.alloc().init()
+			
 			if isLeft:
 				try:  # try loading from tempData first
 					nodes = bubbleLayer.tempData['bubbles']['nodesL']
@@ -133,7 +168,8 @@ def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms
 					# if loaded from tempData, the nodes ma not be in height order yet
 					# (particularly while dragging)
 				except:
-					nodes = bubbleLayer.userData[nodesKeyL]
+					rawNodes = bubbleLayer.userData[nodesKeyL]
+					nodes = [(tempToUserNodeX(n[0], n[1], italicAngle, m.xHeight), n[1]) for n in rawNodes]
 			else:
 				try:
 					nodes = bubbleLayer.tempData['bubbles']['nodesR']
@@ -141,29 +177,27 @@ def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms
 					nodes = [(n.x - wid, n.y) for n in sorted(nodes, key=lambda node: node.y)]  # SORT NODES BY HEIGHT
 					# TEMPDATA'S NODE POS INCLUDES WIDTH; REMOVE IT HERE
 				except:
-					nodes = bubbleLayer.userData[nodesKeyR]
+					rawNodes = bubbleLayer.userData[nodesKeyR]
+					nodes = [(tempToUserNodeX(n[0], n[1], italicAngle, m.xHeight), n[1]) for n in rawNodes]
 
 			for i, n in enumerate(nodes):
 				if i == 0:  # if first node
-					bubblePath.moveToPoint_(NSPoint(n[0], n[1]))
+					localPath.moveToPoint_(NSPoint(n[0], n[1]))
 				else:
-					bubblePath.lineToPoint_(NSPoint(n[0], n[1]))
-		# else:
-		# 	print(f'{indent}bubble paths not found in {theAttributes.layer.parent.name}')
+					localPath.lineToPoint_(NSPoint(n[0], n[1]))
 
-		inheritedTransforms.append(theAttributes.transform)
-		for t in inheritedTransforms:
-			trans = NSAffineTransform()
-			trans.setTransformStruct_(t)
-			trans.transformBezierPath_(bubblePath)
-		for i in range(currentDepth - lastDepth):
-			if inheritedTransforms:
-				inheritedTransforms.pop(-1)
-		lastDepth = currentDepth
-		# print(f'{indent}returning path from {theAttributes.layer.parent.name}:', bubblePath)
+			for t in currentTransforms:
+				trans = NSAffineTransform()
+				trans.setTransformStruct_(t)
+				trans.transformBezierPath_(localPath)
+
+			bubblePath.appendBezierPath_(localPath)
+		# else:
+		# 	log(f'{indent}bubble paths not found in {theAttributes.layer.parent.name}')
+		# log(f'{indent}returning path from {theAttributes.layer.parent.name}: {bubblePath}')
 
 	except:
-		print('buildBubble error: ', traceback.format_exc())
+		log(f'buildBubble error: {traceback.format_exc()}', error=True)
 
 	return bubblePath
 
@@ -290,7 +324,7 @@ def segment_intersection(segment0, segment1):
 # 				if intersection is not None:
 # 					intersections.append(intersection)
 # 			except:
-# 				traceback.print_exc()
+				# log(f'segment_intersection error: {traceback.format_exc()}', error=True)
 
 
 # 	# check if any node is leftmost?
@@ -323,21 +357,21 @@ def segment_intersection(segment0, segment1):
 # 		prevNode = leftmostNodes[i - 1]
 # 		thisPath, prevPath = n.parent, prevNode.parent
 # 		if thisPath != prevPath:  # jump ocurring
-# 			# print('jumping!', n.y, prevNode.y)
+# 			# log('jumping! {n.y} {prevNode.y}')
 # 			# gap between paths
 # 			prevPathTop = prevPath.bounds[0][1] + prevPath.bounds[1][1]
 # 			thisPathBtm = thisPath.bounds[0][1]
-# 			print(prevPathTop, thisPathBtm)
+# 			log(f'{prevPathTop} {thisPathBtm}')
 
 # 			if prevPathTop < thisPathBtm:  # open gap
-# 				# print('\topen or crossing?')
+# 				# log('\topen or crossing?')
 # 				if n.x <= prevNode.x:  # current node is more right (inside)
 # 					nodesToAdd.append((i, NSPoint(prevNode.x, n.y)))
 # 				else:
 # 					nodesToAdd.append((i, NSPoint(n.x, prevNode.y)))
 
 # 			elif prevPathTop >= thisPathBtm:  # overlapping and touching
-# 				# print('\toverlapping')
+# 				# log('\toverlapping')
 
 # 				segCandidates = (
 # 					# new node among the previous path
@@ -348,7 +382,7 @@ def segment_intersection(segment0, segment1):
 # 					(n, n.nextNode, prevNode))
 # 				for seg in segCandidates:
 # 					if segmentOverlapCheck(seg):
-# 						#print('good one', seg)
+# 						#log(f'good one {seg}')
 # 						newX = x_at_nodeYPos(seg[0], seg[1], seg[2])
 # 						if newX is not None:
 # 							nodesToAdd.append((i, NSPoint(newX, seg[2].y)))
@@ -373,7 +407,7 @@ def getFinalBubble(layer, isLeft=True) -> NSBezierPath:
 	# layerAttributes = (l, theTransform, children, refers, depth)
 
 	if bubbleAttributes:
-		bp = buildBubble(theAttributes=bubbleAttributes, isLeft=isLeft, bubblePath=None, inheritedTransforms=[], lastDepth=0)
+		bp = buildBubble(theAttributes=bubbleAttributes, isLeft=isLeft, bubblePath=None, inheritedTransforms=[])
 		# buildBubble contains multiple lines; need to get a single line
 		# getSingleBubbleWall()
 		if isLeft is False:  # on the right, move bubble
@@ -405,7 +439,7 @@ def x_at_y(p0, p1, y):
 		t = (y - p0.y) / (p1.y - p0.y)
 	return p0.x + t * (p1.x - p0.x)
 
-def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: int):
+def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: int, debug=False) -> float:
 	try:
 		# make iterable for both lines
 		lineA = []
@@ -421,36 +455,45 @@ def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: i
 			lineB.append(element[1][0])
 			# lineB.append(NSPoint(element[1][0].x, element[1][0].y))
 		
-		# print('lineA:', lineA)
-		# print('lineB:', lineB)
+		if debug:
+			log(f'lineA: {lineA}')
+			log(f'lineB: {lineB}')
 
 		i = j = 0
-		min_dist = float("inf")
+		# min_dist = float("inf")
+		distances = []
 
 		while i < len(lineA) - 1 and j < len(lineB) - 1:
 			a0, a1 = lineA[i], lineA[i + 1]
 			b0, b1 = lineB[j], lineB[j + 1]
 
-			# overlapping y-range
+			# y-span of lineA and lineB segments
 			y_start = max(a0.y, b0.y)
 			y_end   = min(a1.y, b1.y)
 
 			if y_start <= y_end:
-				# evaluate at boundaries
+				# evaluate distance at each segment's endpoints and at the intersection point if segments cross	
 				for y in (y_start, y_end):
 					xa = x_at_y(a0, a1, y)
 					xb = x_at_y(b0, b1, y)
-					min_dist = min(min_dist, abs(xb - xa))
+					# min_dist = min(min_dist, abs(xb - xa))
+					distances.append(xb - xa)
 
 			# advance the segment that ends first
 			if a1.y < b1.y:
 				i += 1
 			else:
 				j += 1
+			# if debug:
+				# log(f'i={i} j={j} min_dist={min_dist}')
 
-		return min_dist
+		if debug:
+			log(distances)
+			
+		# return min_dist
+		return min(distances)
 	except:
-		print('getKernValue error: ', traceback.format_exc())
+		log(f'getKernValue error: {traceback.format_exc()}', error=True)
 		return float("inf")  # if error occurs, return infinite kern value to trigger fail-safe
 
 
@@ -498,8 +541,10 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 			# referred glyphs are all flattened ...
 			bubblesDic[gn]["LB"] = getFinalBubble( layer, isLeft = True )
 			bubblesDic[gn]["RB"] = getFinalBubble( layer, isLeft = False )
-
+		
 		pairsCount = len(pairsList)
+		# print('pairsCount', pairsCount)
+		# print(bubblesDic)
 		previousProgress = 0
 		for i, pair in enumerate(pairsList):
 			# for progress bar update
@@ -518,8 +563,16 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 			maxKern = ( min(widthL, f.glyphs[right].layers[m.id].width,) / 2 - 1 )
 
 			# figure out the kern value here
-			# print(type(bubblesDic[left]["RB"]), type(bubblesDic[right]["LB"]), type(widthL))
-			kernValue = round(getKernValue(bubblesDic[left]['RB'], bubblesDic[right]['LB'], int(widthL)))
+			# log(f'{type(bubblesDic[left]["RB"])} {type(bubblesDic[right]["LB"])} {type(widthL)}')
+
+			debug = True if left == 'f' and right == 'u' else False  # for debug
+			# debug = True if right =='u' else False  # for debug
+			kernValue = round(getKernValue(bubblesDic[left]['RB'], bubblesDic[right]['LB'], int(widthL), debug=debug))
+		
+			if debug:
+				log(f'Left =  {left}:', type(bubblesDic[left]['RB']))
+				log(f'Right = {right}:', type(bubblesDic[right]['LB']))
+				log(f'kernValue: {kernValue}')
 
 			if kernValue < maxKern:
 				if abs(kernValue) >= 10:  # kerned as is if larger than 10 units
@@ -532,4 +585,4 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 			# THE END
 			f.enableUpdateInterface()
 	except:
-		print(traceback.format_exc())
+		log(f'kernOpenType error: {traceback.format_exc()}', error=True)

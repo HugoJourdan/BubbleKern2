@@ -41,6 +41,41 @@ popupOptions = ["New Preset...", "Rename Preset...", "Delete Preset..."]
 
 Menlo12 = NSFont.fontWithName_size_("Menlo", 12)
 
+
+# INITIATE LOGGING
+import logging
+import os
+# logPath = os.path.expanduser("~/Desktop/glyphs_bubblekern_debug.log")
+# logger = logging.getLogger("BKKerner")
+# logger.setLevel(logging.DEBUG)
+
+# if not logger.handlers:
+# 	handler = logging.FileHandler(logPath)
+# 	formatter = logging.Formatter("%(asctime)s %(message)s")
+# 	handler.setFormatter(formatter)
+# 	logger.addHandler(handler)
+
+def _setup_logger():
+	logger = logging.getLogger("BubbleKern")
+
+	if logger.handlers:
+		return logger  # already configured (important for Glyphs reload)
+
+	logger.setLevel(logging.DEBUG)
+	log_path = os.path.expanduser("~/Desktop/Glyphs_BubbleKern.log")
+	handler = logging.FileHandler(log_path)
+	formatter = logging.Formatter("%(asctime)s BubbleKern: %(message)s")
+	handler.setFormatter(formatter)
+	logger.addHandler(handler)
+	logger.propagate = False  # prevents double logging
+	return logger
+
+def log(message:str = '', error: bool = None):
+	level = logging.ERROR if error is None else logging.DEBUG
+	_setup_logger().log(level, message)
+
+# / INITIATE LOGGING
+
 class BubbleKernKerner(GeneralPlugin):
 	name: str
 	w: Optional[vanilla.Window] = None
@@ -219,7 +254,7 @@ class BubbleKernKerner(GeneralPlugin):
 			self.refreshTotal() # update total pairs count
 			self.w.open()
 		except:
-			print(traceback.format_exc())
+			log(f'showWindow_ error: {traceback.format_exc()}', error=True)
 
 	def windowShouldClose_(self, sender):  # User attempts to close the main window
 		if self.w:
@@ -270,12 +305,12 @@ class BubbleKernKerner(GeneralPlugin):
 				# self.refreshPopupButton() # will be done in loadPreferences()
 				self.loadPreferences()
 		except:
-			print("BubbleKern Error (popupTasks):", traceback.format_exc())
+			log(f'popupTasks error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def refreshPopupButton(self):  # refresh option popup items
 		try:
-			# print(self.presetsDic)
+			# log(self.presetsDic)
 			presetsDicNames = sorted([k for k in self.presetsDic.keys()])
 			thePopup = self.w.tabs[0].group0.optionsPopup
 
@@ -290,9 +325,9 @@ class BubbleKernKerner(GeneralPlugin):
 			# set selection to the loaded preset
 			thePopup.set(presetsDicNames.index(self.loadedPresetName))
 
-		except Exception as e:
-			Glyphs.showMacroWindow()
-			print("BubbleKern Error (refreshPopupButton): %s" % e)
+		except:
+			log(f'refreshPopupButton error: {traceback.format_exc()}', error=True)
+			
 
 	@objc.python_method
 	def loadPreferences(self, sender=None):
@@ -342,9 +377,9 @@ class BubbleKernKerner(GeneralPlugin):
 
 			# which dic to set
 			if sender == self.w.tabs[0].group0.optionsPopup:
-				print('Popup is loading')
+				log('Popup is loading')
 			elif sender == self.w.tabs[0].group0.permList:  # the permList has been edited
-				print('List view is loading')
+				log('List view is loading')
 			else: # on first load; load the first item?
 				if not self.loadedPresetName:
 					self.loadedPresetName = sorted([k for k in self.presetsDic.keys()])[0] # name of the preset
@@ -364,7 +399,7 @@ class BubbleKernKerner(GeneralPlugin):
 
 				# self.w.tabs[0].group0.permList.set()
 		except:
-			print("BubbleKern Error (loadPreferences):", traceback.format_exc())
+			log(f'loadPreferences error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def savePreferences(self, option=0): # 0=save, 1=delete, 2=new
@@ -391,7 +426,7 @@ class BubbleKernKerner(GeneralPlugin):
 
 			Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
 		except:
-			print("BubbleKern Error (SavePreferences):", traceback.format_exc())
+			log(f'SavePreferences error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def pairsCount(self, text0: str, text1: str, flipped: bool) -> int:
@@ -428,7 +463,7 @@ class BubbleKernKerner(GeneralPlugin):
 				lines += '(...)'
 			self.w.tabs[0].group0.preview.set(lines)
 		except:
-			print("BubbleKern Error (refreshPreview):", traceback.format_exc())
+			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def refreshTotal(self): # preview EditText
@@ -437,7 +472,7 @@ class BubbleKernKerner(GeneralPlugin):
 			totalPairs = sum([int(p['Pairs']) for p in permutations])
 			self.w.tabs[0].group0.total.set(totalPairsPrefix + format(totalPairs, ','))
 		except:
-			print("BubbleKern Error (refreshTotal):", traceback.format_exc())
+			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def cleanUpText(self, text) -> list:  # Function to clean up the glyph name list in Sheet
@@ -446,7 +481,7 @@ class BubbleKernKerner(GeneralPlugin):
 			text = text.split()  # turn to a list
 			return text
 		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
-			print('cleanUpText error: ', traceback.format_exc())
+			log(f'cleanUpText error: {traceback.format_exc()}', error=True)
 			# return text
 
 	@objc.python_method
@@ -465,7 +500,7 @@ class BubbleKernKerner(GeneralPlugin):
 			selectedIndexes = sender.getSelectedIndexes()
 			editedIndex = sender.getEditedIndex()
 			editedRow = permutations[editedIndex]
-			# print(editedRow)
+			# log(editedRow)
 			pairsCount = self.pairsCount(editedRow['Left'], editedRow['Right'], editedRow['Add Flipped'])
 			permutations[editedIndex]['Pairs'] = pairsCount
 			sender.set(permutations)
@@ -481,12 +516,12 @@ class BubbleKernKerner(GeneralPlugin):
 			# updating the total number of pairs
 			self.refreshTotal()
 		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
-			print('checkBoxClicked error: ', traceback.format_exc())
+			log(f'checkBoxClicked error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def permListDoubleClick(self, sender):  # when permutation list line has been double-clicked, open sheet
 		try:
-			# print('column double-clicked')
+			# log('column double-clicked')
 			index = sender.getSelectedIndexes()[0]
 
 			groupText0 = sender.get()[index]["Left"]
@@ -516,14 +551,14 @@ class BubbleKernKerner(GeneralPlugin):
 			self.s.addAutoPosSizeRules(rules)
 			self.s.open()
 		except:
-			print(traceback.format_exc())
+			log(f'permListDoubleClick error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def cancelEditPermutation(self, sender):  # Close sheet by clicking cancel (esc is implemented as subclass)
 		try:
 			self.s.close()
 		except:
-			print(traceback.format_exc())
+			log(f'cancelEditPermutation error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def confirmEditPermutation(self, sender):
@@ -551,7 +586,7 @@ class BubbleKernKerner(GeneralPlugin):
 				# need to refresh section preview
 				self.refreshPreview()
 		except:
-			print(traceback.format_exc())
+			log(f'confirmEditPermutation error: {traceback.format_exc()}', error=True)
 
 # DRAG & DROP
 	# Establish drag data.
@@ -581,7 +616,7 @@ class BubbleKernKerner(GeneralPlugin):
 			}
 			return typesAndValues
 		except:
-			print(traceback.format_exc())
+			log(f'makeDragDataCallback error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def dropCandidateEnteredCallback(self, info):
@@ -610,8 +645,8 @@ class BubbleKernKerner(GeneralPlugin):
 				indexes = sender.getDropItemValues(items, "Tosche.BubbleKernKerner.permListIndexes")[0]
 				if endIndex > indexes[0]:
 					endIndex -= 1
-				# print('started =', indexes)
-				# print('proposed =', endIndex)
+				# log(f'started = {indexes}')
+				# log(f'proposed = {endIndex}')
 				listItems = list(permList.get())
 
 				movingChunk = [listItems.pop(i) for i in reversed(indexes)][::-1]
@@ -628,7 +663,7 @@ class BubbleKernKerner(GeneralPlugin):
 				# self.LoadPreferences(setIndex=endIndex)
 			return True
 		except:
-			print(traceback.format_exc())
+			log(f'performDropCallback error: {traceback.format_exc()}', error=True)
 # / DRAG & DROP
 
 	@objc.python_method
@@ -643,7 +678,7 @@ class BubbleKernKerner(GeneralPlugin):
 			if len(listToSet) > 1:
 				self.w.tabs[0].group0.delButton.enable(True)
 		except:
-			print(traceback.format_exc())
+			log(f'addButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def delButton(self, sender):  # remove a selected permutation
@@ -661,7 +696,7 @@ class BubbleKernKerner(GeneralPlugin):
 			if len(listToSet) == 1:
 				self.w.tabs[0].group0.delButton.enable(False)
 		except:
-			print(traceback.format_exc())
+			log(f'delButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def BubbleKernMain(self, sender):  # generate kerning
@@ -683,7 +718,7 @@ class BubbleKernKerner(GeneralPlugin):
 
 			self.font.enableUpdateInterface()
 		except:
-			print(traceback.format_exc())
+			log(f'BubbleKernMain error: {traceback.format_exc()}', error=True)
 
 	def interpolateLayer_glyph_interpolation_error_(self, layer: GSLayer, glyph: GSGlyph, interpolation: dict, error: Any):
 		pass
