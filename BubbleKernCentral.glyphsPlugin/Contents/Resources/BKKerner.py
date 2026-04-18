@@ -1,7 +1,7 @@
 from __future__ import division, print_function, unicode_literals
 
 import objc
-from GlyphsApp import Glyphs, GSLayer, GSGlyph, EDIT_MENU #, GSCallbackHandler
+from GlyphsApp import Glyphs, GSLayer, GSGlyph, GetFolder, EDIT_MENU #, GSCallbackHandler
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
@@ -215,7 +215,33 @@ class BubbleKernKerner(GeneralPlugin):
 		tab0.addAutoPosSizeRules(rules, None)
 
 		# GENERATE FONT TAB
-		# tab1 = self.w.tabs[1]
+		tab1 = self.w.tabs[1]
+		tab1.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
+
+1. You can generate a new font with 'BBLH' table based on the BubbleKern data.
+(Maybe also vertical 'BBLV' table in the future)
+
+2. You need to have FontTools installed.
+Install it in Glyphs Python using this Terminal command: "pip install fonttools"
+
+3. Interpolation is currently not supported. Only the instances matching masters will be exported.
+
+4. The font format is set in the "Export..." menu.""")
+		tab1.exportButton = vanilla.Button('auto', 'Generate Bubbled Font', self.generateBubbledFont)
+		tab1.getHTMLButton = vanilla.Button('auto', 'Get HTML tester', self.getHTMLforBBLH)
+		tab1.getHTMLButton.enable(False)
+		tab1.spacer0 = vanilla.Group('auto')
+		tab1.spacer1 = vanilla.Group('auto')
+		tab1.spacer2 = vanilla.Group('auto')
+		tab1.spacer3 = vanilla.Group('auto')
+		rules = [
+			'H:|[spacer0(==spacer1)]-[caption]-[spacer1]|',
+			'H:|[spacer0(==spacer1)]-[exportButton]-[spacer1]|',
+			'H:|[spacer0(==spacer1)]-[getHTMLButton]-[spacer1]|',
+			'V:|[spacer2(==spacer3)]-[caption]-(20)-[exportButton]-[getHTMLButton]-[spacer3]|',
+		]
+		tab1.addAutoPosSizeRules(rules, None)
+
 
 		# REMOVE BUBBLEKERN TAB
 		tab2 = self.w.tabs[2]
@@ -740,6 +766,22 @@ class BubbleKernKerner(GeneralPlugin):
 			bubbleNode.y *= 0.2
 		'''
 
+# Tab1 functions (generate bubbled font)
+	@objc.python_method
+	def generateBubbledFont(self, sender):
+
+		folderPath = GetFolder(message="Select a saving location.")
+
+		if folderPath:
+			if BKCommonLogic.writeFontWithBBLH(folderPath, self.font):
+				Glyphs.showNotification("Bubbled font has been generated successfully!", "Success")
+				self.w.hide()
+
+	@objc.python_method
+	def getHTMLforBBLH(self, sender):
+		pass
+
+# Tab2 functions (remove bubble data)
 	@objc.python_method
 	def removeBubbles(self, sender):
 		try:

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>BBLH tester — OpenType.js (stable)</title>
+<title>BubbleKern BBLH table tester</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   :root{
@@ -67,13 +67,15 @@
   input[type="range"] { width:180px; }
   .meta { font-size:12px; color:var(--muted) }
   .footer { font-size:12px; color:var(--muted); padding:10px 16px; border-top:1px solid rgba(0,0,0,0.04); }
-  .status { font-size:13px; color:var(--muted) }
+  .status { font-size:13px; color:var(--muted); transition:color 120ms ease, font-size 120ms ease, font-weight 120ms ease; }
+  .status.error { color:#d93025; font-size:16px; font-weight:700; }
+  body.light .status.error { color:#b3261e; }
 </style>
 </head>
 <body>
 <div class="app">
   <header>
-    <h1>BBLH tester — stable</h1>
+    <h1>BubbleKern BBLH table tester</h1>
     <div style="margin-left:auto" id="fontName">No font loaded</div>
   </header>
 
@@ -86,14 +88,14 @@
 
       <div class="input">
         <label class="small">Editable text (multi-line, wraps)</label>
-        <div id="editor" class="editor" contenteditable="true">The quick brown fox jumps over the lazy dog
-This is a second line to test wrapping and multi-line rendering.</div>
+        <div id="editor" class="editor" contenteditable="true">The quick brown fox jumps over the lazy dog.
+SIX BIG DEVILS FROM JAPAN QUICKLY FORGOT HOW TO WALTZ.</div>
       </div>
 
       <div class="controls-row">
         <div class="control">
           <label for="size">Size</label>
-          <input id="size" type="range" min="12" max="800" value="160">
+          <input id="size" type="range" min="24" max="500" value="160">
           <div class="small" id="sizeValue">160</div>
         </div>
 
@@ -157,7 +159,10 @@ let rawArrayBuffer = null;
 let bblhMap = {}; // glyphIndex -> { set1, set2 }
 let unitsPerEm = 1000;
 
-function setStatus(msg){ statusEl.textContent = msg; }
+function setStatus(msg, kind='info'){
+  statusEl.textContent = msg;
+  statusEl.classList.toggle('error', kind === 'error');
+}
 function setFontName(s){ fontNameEl.textContent = s; }
 
 function resizeCanvas(){
@@ -201,10 +206,10 @@ function handleFile(file){
       render();
     } catch (err) {
       console.error(err);
-      setStatus('Failed to load font: ' + (err && err.message ? err.message : err));
+      setStatus('Failed to load font: ' + (err && err.message ? err.message : err), 'error');
     }
   };
-  reader.onerror = (err) => { setStatus('Failed to read file: ' + err); };
+  reader.onerror = (err) => { setStatus('Failed to read file: ' + err, 'error'); };
   reader.readAsArrayBuffer(file);
 }
 
@@ -330,6 +335,10 @@ function drawPolyline(ctx, poly, xOffsetPx, baselineY, scale){
 function render(){
   resizeCanvas();
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // ensure body class matches checkbox before reading theme-dependent styles
+  if (lightBgCheckbox.checked) document.body.classList.add('light'); else document.body.classList.remove('light');
+
   // background
   const css = getComputedStyle(document.body);
   const canvasBg = css.getPropertyValue('--canvas-bg') || '#040404';
@@ -341,12 +350,10 @@ function render(){
     return;
   }
 
-  // ensure body class matches checkbox
-  if (lightBgCheckbox.checked) document.body.classList.add('light'); else document.body.classList.remove('light');
-
   const text = editor.innerText || editor.textContent || '';
   const useBubbles = useBubblesCheckbox.checked;
-  const bubbleOpacity = Math.max(0, Math.min(1, (parseFloat(bubblesOpacityInput.value)||80)/100));
+  const bubbleOpacityValueRaw = parseFloat(bubblesOpacityInput.value);
+  const bubbleOpacity = Math.max(0, Math.min(1, (Number.isFinite(bubbleOpacityValueRaw) ? bubbleOpacityValueRaw : 80) / 100));
   bubblesOpacityValue.textContent = Math.round(bubbleOpacity*100);
   const fontSize = parseFloat(sizeInput.value) || 160;
   sizeValue.textContent = fontSize;
@@ -359,7 +366,9 @@ function render(){
   const leftMarginUnits = leftMarginPx / scale;
   const lineHeightUnits = unitsPerEm * 1.2;
   const lineHeightPx = lineHeightUnits * scale;
-  const topBaselinePx = Math.floor(0.12 * rect.height) + fontSize; // keep a top margin
+  const topPaddingPx = 24;
+  const ascenderUnits = loadedFont.ascender || unitsPerEm * 0.8;
+  const topBaselinePx = topPaddingPx + ascenderUnits * scale;
 
   // split paragraphs
   const paragraphs = text.split(/\r?\n/);
@@ -428,6 +437,7 @@ function render(){
   for (let li=0; li<lines.length; li++){
     const L = lines[li];
     const glyphs = L.glyphs;
+    const basePositions = L.positions || [];
     if (!glyphs || glyphs.length===0){
       allLineData.push({glyphs:[], finalPos:[]});
       continue;
@@ -437,8 +447,14 @@ function render(){
     for (let gi=0; gi<glyphs.length; gi++){
       finalPos.push(cursorUnits);
       if (gi < glyphs.length - 1){
-        let advanceUnits = glyphs[gi].advanceWidth || unitsPerEm;
-        if (useBubbles && bblhMap && Object.keys(bblhMap).length>0){
+        const defaultAdvance = glyphs[gi].advanceWidth || unitsPerEm;
+        const originalGap = basePositions.length > gi + 1
+          ? (basePositions[gi + 1] - basePositions[gi])
+          : defaultAdvance;
+        let advanceUnits = originalGap;
+        const hasExplicitGap = originalGap > defaultAdvance + 1;
+
+        if (!hasExplicitGap && useBubbles && bblhMap && Object.keys(bblhMap).length>0){
           const leftSets = bblhMap[glyphs[gi].index] !== undefined ? bblhMap[glyphs[gi].index] : null;
           const rightSets = bblhMap[glyphs[gi+1].index] !== undefined ? bblhMap[glyphs[gi+1].index] : null;
           const off = computeBubbleOffset(leftSets, rightSets);
@@ -453,7 +469,7 @@ function render(){
   }
 
   // draw bubbles (behind)
-  const alpha = Math.max(0, Math.min(1, (parseFloat(bubblesOpacityInput.value)||80)/100));
+  const alpha = bubbleOpacity;
   for (let li=0; li<allLineData.length; li++){
     const baselineY = topBaselinePx + li * lineHeightPx;
     const data = allLineData[li];
@@ -478,8 +494,7 @@ function render(){
     }
   }
 
-  // glyph fill color: derive from body class (ensures white on dark, black on light)
-  const isLight = document.body.classList.contains('light');
+  const isLight = lightBgCheckbox.checked;
   const glyphFill = isLight ? '#000000' : '#ffffff';
 
   // draw glyphs on top
@@ -492,10 +507,10 @@ function render(){
       const xUnits = data.finalPos[gi];
       const xPx = xUnits * scale;
       const path = g.getPath(xPx, baselineY, fontSize);
+      path.fill = glyphFill;
+      path.stroke = null;
+      path.strokeWidth = 0;
       ctx.save();
-      ctx.fillStyle = glyphFill;
-      ctx.strokeStyle = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(0,0,0,0.2)';
-      ctx.lineWidth = Math.max(0.6, Math.round(fontSize/200));
       path.draw(ctx);
       ctx.restore();
     }

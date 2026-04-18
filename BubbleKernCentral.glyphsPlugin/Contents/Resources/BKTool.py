@@ -244,6 +244,8 @@ class BubbleKernTool(SelectTool):
 			dict(title='Show Compatibility', callback=None),
 			dict(title='Show Node Coordinates', callback=None)
 		]
+		# self.w.group.compatL = vanilla.TextBox('auto', 'Compatible:👍')
+		# self.w.group.compatR = vanilla.TextBox('auto', 'Compatible:👍')
 		self.w.group.exportL = vanilla.CheckBox('auto', 'Export', callback=self.infoBox)
 		self.w.group.exportR = vanilla.CheckBox('auto', 'Export', callback=self.infoBox)
 		self.w.group.menusL = vanilla.ActionButton('auto', menuItemsL)
