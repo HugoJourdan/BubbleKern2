@@ -2,6 +2,7 @@
 A set of GlyphsApp plugins that allows you to kern fonts in a more visual way. Unlike the original BubbleKern, it is based on the polygonal data format for the balance of data/computation efficiency and user experience.
 
 Currently in alpha state.
+
 ![Title image](BubbleKernHeader.png)
 
 ## Installation
