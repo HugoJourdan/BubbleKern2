@@ -1,13 +1,14 @@
 # encoding: utf-8
 
-from GlyphsApp import Glyphs, GSLayer, GSPath
+from GlyphsApp import Glyphs, GSLayer, GSAlignmentDisable
 import traceback
 from Foundation import NSAffineTransform, NSPoint
 from AppKit import NSBezierPath, NSTextField
 from Cocoa import NSAlert, NSAlertStyleCritical
 from dataclasses import dataclass, field
 from typing import Optional
-from math import ceil, radians, tan
+# from math import ceil, radians, tan
+import math
 
 # THIS IS WHERE THE SHARED BACKEND CODE SHOULD BE STORED
 # SUCH AS CALCULATING THE BUBBLE SHAPE, DEALING WITH INHERITED (I.E. COMPONENT) BUBBLES.
@@ -89,13 +90,39 @@ def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askSt
 # also from buildBubble()
 def tempToUserNodeX(x, y, italicAngle, xHeight):
 	if italicAngle != 0:
-		italicAngle = radians(90 - italicAngle)
-		return x - (y - xHeight / 2) / tan(italicAngle)
+		italicAngle = math.radians(90 - italicAngle)
+		return x - (y - xHeight / 2) / math.tan(italicAngle)
 	else:
 		return x
 
 # called from getFinalBubble()
 # def collectBubbleShapes(layer, theTransform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), depth=0) -> layerAttributes | None:
+def isReferenceValid(layer, side) -> bool:
+	# RETURNS True IF REFERENCE EXISTS IN FONT AND CAUSES NO CIRCULAR CHAIN.
+	# side IS EITHER 'L' OR 'R'.
+	try:
+		gName = layer.userData.get('BubbleKernRefer' + side)
+		if not gName:
+			return True  # no reference is always valid
+		font = layer.font()
+		if not font:
+			return False
+		mId = layer.associatedMasterId
+		visited = {layer.parent.name}
+		current_name = gName
+		while current_name:
+			if current_name in visited:
+				return False  # circular reference
+			if not font.glyphs[current_name]:
+				return False  # glyph does not exist in font
+			visited.add(current_name)
+			current_layer = font.glyphs[current_name].layers[mId]
+			current_name = current_layer.userData.get('BubbleKernRefer' + side) or None
+		return True
+	except:
+		log(f'isReferenceValid error: {traceback.format_exc()}', error=True)
+		return False
+
 def gatherBubbleInfo(layer, theTransform=defaultTransform, refers=False, depth=0, isLeft=True) -> layerAttributes | None:
 	# FOR GETTING ACCUMULATED ATTRIBUTES FROM NESTED BUBBLES.
 	# INPUT LAYER, TRANSFORM, AND CURRENT BUBBLE PURSUIT LEVEL.
@@ -107,15 +134,21 @@ def gatherBubbleInfo(layer, theTransform=defaultTransform, refers=False, depth=0
 		children = []  # info for components in the layer
 		side = referKeyL if isLeft else referKeyR
 		if layer.userData[side]:  # if reference exists
-			refers = True
-			gName = layer.userData[side]
-			if f.glyphs[gName]:  # if glyph name is valid
+			if isReferenceValid(layer, 'L' if isLeft else 'R'):  # skip invalid/circular references
+				refers = True
+				gName = layer.userData[side]
 				# get the gName layer's bubble info
 				referredLayer = f.glyphs[gName].layers[layer.associatedMasterId]
 				children.append(gatherBubbleInfo(referredLayer, defaultTransform, False, depth + 1))
 		else:  # reference doesn't exist; look for components
-			for c in layer.components:  # if reference doesn't exist, chase down components
-				if c.automaticAlignment:
+			if len(layer.paths) == 0 and len(layer.components) > 0:
+			# components only (ignore components in mixed situation)
+				for c in layer.components:  # if reference doesn't exist, chase down components
+					# add only when automatic alignment is on and alignment is not disabled
+					if c.automaticAlignment == False or c.alignment != GSAlignmentDisable:
+						continue
+					if c.transform != defaultTransform:
+						continue
 					children.append(gatherBubbleInfo(c.componentLayer, c.transform, False, depth + 1))
 
 		# matched = False  # deepest bubble layer found status: False as default
@@ -493,8 +526,8 @@ def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: i
 			
 		# return min_dist
 		return min(distances)
-	except:
-		log(f'getKernValue error: {traceback.format_exc()}', error=True)
+	except ValueError:
+		# log(f'getKernValue error: {traceback.format_exc()}', error=True)
 		return float("inf")  # if error occurs, return infinite kern value to trigger fail-safe
 
 
@@ -503,7 +536,7 @@ def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: i
 # 　function that rounds up the given number to nearest 10, used for applying minimal kernValue
 # I use this because kern value may be negative.
 def roundup(givenNumber):
-	return int(ceil(givenNumber / 10.0)) * 10
+	return int(math.ceil(givenNumber / 10.0)) * 10
 
 
 def kernOpenType(presetName: str, selectedLayersOnly: bool):
@@ -561,14 +594,17 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 
 			widthL = f.glyphs[left].layers[m.id].width
 			# no more than half of the narrower glyph
-			maxKern = ( min(widthL, f.glyphs[right].layers[m.id].width,) / 2 - 1 )
+			maxKern = ( min(widthL, f.glyphs[right].layers[m.id].width,) / 2 )
 
 			# figure out the kern value here
 			# log(f'{type(bubblesDic[left]["RB"])} {type(bubblesDic[right]["LB"])} {type(widthL)}')
 
-			debug = True if left == 'f' and right == 'u' else False  # for debug
+			# debug = True if left == 'f' and right == 'u' else False  # for debug
 			debug = False
-			kernValue = round(getKernValue(bubblesDic[left]['RB'], bubblesDic[right]['LB'], int(widthL), debug=debug))
+			# log(f'Calculating kern for {left} and {right}...')
+			# log()
+			rawKern = getKernValue(bubblesDic[left]['RB'], bubblesDic[right]['LB'], int(widthL), debug=debug)
+			kernValue = round(rawKern) if not math.isinf(rawKern) else rawKern
 		
 			if debug:
 				log(f'Left =  {left}:', type(bubblesDic[left]['RB']))
@@ -812,7 +848,7 @@ def collectBBLHData(font=None, masterId=None) -> dict:
 		# 	master_id = selected_master.id if selected_master else None
 		# if not master_id:
 		# 	return {}
-		log(f'collectBBLHData called with masterId: {masterId}')
+		# log(f'collectBBLHData called with masterId: {masterId}')
 		result = {}
 		for g in f.glyphs:
 			try:
@@ -826,7 +862,7 @@ def collectBBLHData(font=None, masterId=None) -> dict:
 			# which may miss some bubbles if they are built from components or references
 			left_nodes = _normalize_nodes_for_export(getFinalBubble( layer, isLeft = True ), False, None)
 			right_nodes = _normalize_nodes_for_export(getFinalBubble( layer, isLeft = False ), True, wid)
-			log(f'Glyph: {g.name}, left bubble: {left_nodes}, right bubble: {right_nodes}')
+			# log(f'Glyph: {g.name}, left bubble: {left_nodes}, right bubble: {right_nodes}')
 
 			# left_nodes = _normalize_nodes_for_export(layer.userData.get(nodesKeyL), False, None)
 			# right_nodes = _normalize_nodes_for_export(layer.userData.get(nodesKeyR), True, wid)
@@ -836,7 +872,7 @@ def collectBBLHData(font=None, masterId=None) -> dict:
 
 			result[g.name] = [left_nodes, right_nodes]
 		
-		log(f'collectBBLHData result: {result}')
+		# log(f'collectBBLHData result: {result}')
 		return result
 	except:
 		log(f'collectBBLHData error: {traceback.format_exc()}', error=True)
@@ -1038,9 +1074,7 @@ def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 	if font is None:
 		return None
 
-
-
-	# # new implementation using all instances
+	exportedPaths = []
 	# for ins in font.instances:
 	# 	log(f'Processing instance: {ins.name}')
 	# 	if not ins.active:
@@ -1079,7 +1113,7 @@ def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 
 
 	for m in font.masters:
-		log(f'Processing master: {m.name}')
+		# log(f'Processing master: {m.name}')
 		# check for valid instance
 		insFound = False
 		for ins in font.instances:
@@ -1091,17 +1125,16 @@ def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 
 		# gather bblh data
 		bblhData = collectBBLHData(font=font, masterId=m.id)
-		log(f'Collected BBLH data for master {m.name}: {bblhData}')
+		# log(f'Collected BBLH data for master {m.name}: {bblhData}')
 		if not bblhData:
-			log("writeFontWithBBLH: no bubble data found; skipping BBLH table write.")
+			# log("writeFontWithBBLH: no bubble data found; skipping BBLH table write.")
 			return None
 		
 		# generate instance in the inputFontPath
 		ins.generate(fontPath=folderPath)
-		log(f'generated font for master: {m.name} at path: {folderPath}')
 		fontFileName = ins.lastExportedFilePath.split('/')[-1]
 		outputFontPath = folderPath + '/' + fontFileName # path to the font file
-		log(f'output font path: {outputFontPath}')
+		# log(f'output font path: {outputFontPath}')
 
 
 		bubbledFont = TTFont(outputFontPath)
@@ -1115,10 +1148,11 @@ def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 		
 		# Save
 		bubbledFont.save(outputFontPath)
-		log(f"Font saved with BBLH table to {outputFontPath}")
+		# log(f"Font saved with BBLH table to {outputFontPath}")
+		exportedPaths.append(outputFontPath)
 	
 	log('writeFontWithBBLH completed successfully.')
-	return True
+	return exportedPaths
 
 
 
@@ -1240,3 +1274,11 @@ def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 # 		return None
 
 
+# to be run from BK Tool (incomplete)
+def autoBuildBubble(layer, isLeft=True):
+	try:
+		decomposedLayer = layer.copyDecomposedLayer()
+
+	except:
+		log(f'autoBuildBubble error (decomposing layer): {traceback.format_exc()}', error=True)
+		return None

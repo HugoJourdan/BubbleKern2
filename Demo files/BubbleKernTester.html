@@ -88,8 +88,9 @@
 
       <div class="input">
         <label class="small">Editable text (multi-line, wraps)</label>
-        <div id="editor" class="editor" contenteditable="true">The quick brown fox jumps over the lazy dog.
-SIX BIG DEVILS FROM JAPAN QUICKLY FORGOT HOW TO WALTZ.</div>
+        <div id="editor" class="editor" contenteditable="true">SIX BIG DEVILS FROM JAPAN QUICKLY FORGOT HOW TO WALTZ.
+The quick brown fox jumps over the lazy dog.
+</div>
       </div>
 
       <div class="controls-row">
@@ -303,15 +304,23 @@ function computeBubbleOffset(leftSets, rightSets){
   const leftRight = leftSets && leftSets.set2 ? leftSets.set2 : null;
   const rightLeft = rightSets && rightSets.set1 ? rightSets.set1 : null;
   if (!leftRight || !rightLeft) return null;
-  const ys = new Set();
-  leftRight.forEach(p=>ys.add(p[1])); rightLeft.forEach(p=>ys.add(p[1]));
-  ys.add(leftRight[0][1]); ys.add(leftRight[leftRight.length-1][1]);
-  ys.add(rightLeft[0][1]); ys.add(rightLeft[rightLeft.length-1][1]);
-  const yarr = Array.from(ys).sort((a,b)=>a-b);
+
+  // clamp to the Y range where BOTH bubbles are actually defined
+  const yLo = Math.max(leftRight[0][1],                    rightLeft[0][1]);
+  const yHi = Math.min(leftRight[leftRight.length-1][1],   rightLeft[rightLeft.length-1][1]);
+  if (yLo >= yHi) return null; // no vertical overlap → no bubble interaction
+
+  // seed with the clamped endpoints, then add interior vertices from each polyline
+  const ys = new Set([yLo, yHi]);
+  leftRight.forEach(p => { if (p[1] > yLo && p[1] < yHi) ys.add(p[1]); });
+  rightLeft.forEach(p => { if (p[1] > yLo && p[1] < yHi) ys.add(p[1]); });
+
+  const yarr = Array.from(ys).sort((a,b) => a-b);
   let maxDiff = -Infinity;
   for (const y of yarr){
-    const xL = xAtY(leftRight,y), xR = xAtY(rightLeft,y);
-    if (xL===null || xR===null) continue;
+    const xL = xAtY(leftRight, y);
+    const xR = xAtY(rightLeft, y);
+    if (xL === null || xR === null) continue;
     const diff = xL - xR;
     if (diff > maxDiff) maxDiff = diff;
   }

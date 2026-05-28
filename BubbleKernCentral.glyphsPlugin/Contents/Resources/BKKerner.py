@@ -5,6 +5,7 @@ from GlyphsApp import Glyphs, GSLayer, GSGlyph, GetFolder, EDIT_MENU #, GSCallba
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
+import subprocess # for revealing exported font in Finder
 import re  # for displaying font file name
 # import threading # for managing progress bar
 import time # for managing progress bar
@@ -17,6 +18,8 @@ from AppKit import (
 	NSFont,  # for setting preview in Menlo
 	# NSDragOperationMove,  # currently useless
 	NSFloatingWindowLevel,
+	NSWorkspace,  # for revealing exported fonts in Finder
+	NSURL,  # for revealing exported fonts in Finder
 )
 
 import BKCommonLogic
@@ -773,9 +776,13 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		folderPath = GetFolder(message="Select a saving location.")
 
 		if folderPath:
-			if BKCommonLogic.writeFontWithBBLH(folderPath, self.font):
-				Glyphs.showNotification("Bubbled font has been generated successfully!", "Success")
+			exportedPaths = BKCommonLogic.writeFontWithBBLH(folderPath, self.font)
+			if exportedPaths:
+				# Glyphs.showNotification("Success", "Bubbled font has been generated successfully!")
 				self.w.hide()
+				urls = [NSURL.fileURLWithPath_(p) for p in exportedPaths]
+				NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_(urls)
+
 
 	@objc.python_method
 	def getHTMLforBBLH(self, sender):
@@ -787,6 +794,10 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			self.font
 			del self.font.userData['useBubbleKern']
+			try:
+				del self.font.tempData['useBubbleKern']
+			except:
+				pass
 
 			keys = (
 				'BubbleKernExportL', 'BubbleKernExportR',
@@ -800,5 +811,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 							del gl.userData[key]
 						except:
 							pass
+					try:
+						del gl.tempData['bubbles']
+					except:
+						pass
 		except:
 			pass
