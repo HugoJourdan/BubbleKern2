@@ -7,7 +7,7 @@ Currently in alpha state.
 
 ## Installation
 Install BubbleKernCentral.glyphsPlugin by double-clicking it (assuming you already have GlyphsApp).
-It’s a WIP plugin and unavailable on Plugin Manager for now.
+It’s a work in progress and purposefully unavailable on Plugin Manager for now.
 
 ## Plugins
 - BubbleKern Tool: A new tool to draw bubbles. Each glyph contains two polygonal bubbles on the left and right.
