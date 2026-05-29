@@ -7,6 +7,7 @@ Currently in alpha state.
 
 ## Installation
 Install BubbleKernCentral.glyphsPlugin by double-clicking it (assuming you already have GlyphsApp).
+It’s a WIP plugin and unavailable on Plugin Manager for now.
 
 ## Plugins
 - BubbleKern Tool: A new tool to draw bubbles. Each glyph contains two polygonal bubbles on the left and right.
@@ -16,3 +17,10 @@ Install BubbleKernCentral.glyphsPlugin by double-clicking it (assuming you alrea
 - BK Test Serif: my open-source sample roman file with pre-drawn bubbles.
 - BKTestSerif-Regular.otf: the font file with BBLH table.
 - BubbleKernTester.html: currently the only place where you can test dynamic kerning using *BBLH* table.
+
+## Missing features / To dos
+- Combining multiple bubble polylines. (**Composite glyphs like Á do not work well for now**)
+- Right to Left kerning.
+- Vertical kerning.
+- Automatic bubble generation.
+- Copying & pasting of nodes.
