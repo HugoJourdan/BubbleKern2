@@ -78,7 +78,7 @@ def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askSt
 	response = alert.runModal()
 	if response == 1000:  # OK
 		if askString:
-			text = field.stringValue().strip() # strip removes white spaces from both ends of str
+			text = inputField.stringValue().strip() # strip removes white spaces from both ends of str
 			if text:
 				return inputField.stringValue()
 			show_alert('Preset name cannot be empty or spaces only.', cancel=False)

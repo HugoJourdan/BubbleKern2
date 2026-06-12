@@ -40,7 +40,7 @@ class escapableSheet(vanilla.Sheet):
 # THE BACKEND CODE FOR COMPUTING BUBBLE SHAPES SHOULD BE SHARED WITH THE DRAWING METHODS (IN BKCOMMONLOGIC)
 
 
-popupOptions = ["New Preset...", "Rename Preset...", "Delete Preset..."]
+popupOptions = ["New Preset...", "Rename Selected...", "Duplicate Selected...", "Delete Selected..."]
 
 Menlo12 = NSFont.fontWithName_size_("Menlo", 12)
 
@@ -319,8 +319,21 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				self.loadedPresetName = newName
 				self.savePreferences()
 				self.refreshPopupButton()
+			
+			elif index == presetsDicLength + 2: # duplicate
+				newName = BKCommonLogic.show_alert(f'Enter Name for the Duplicate of Preset: {self.loadedPresetName}', askString=True)
+				if not newName:
+					return
+				if newName in self.presetsDic.keys():
+					BKCommonLogic.show_alert('Existing preset name is not allowed.', cancel=False)
+					return
+				self.presetsDic[newName] = self.presetsDic[self.loadedPresetName] # just copy the same dic entry
+				self.loadedPresetName = newName
+				self.savePreferences()
+				self.refreshPopupButton()
+				self.loadPreferences()
 
-			elif index == presetsDicLength + 2: # delete
+			elif index == presetsDicLength + 3: # delete
 				if len(self.presetsDic) <= 1: # only one or zero preset to delete
 					BKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
 					self.w.tabs[0].group0.optionsPopup.set(0)
