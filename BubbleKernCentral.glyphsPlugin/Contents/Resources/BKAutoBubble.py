@@ -18,7 +18,7 @@ Indentation is 4 spaces, not the tabs of the rest of this plugin, because most
 of the file is that verbatim copy.
 
 Everything except the layer scan is pure, so the suite in
-`test_bkautobubble.py` runs without Glyphs.
+`tests/test_bkautobubble.py` runs without Glyphs.
 """
 
 import json
