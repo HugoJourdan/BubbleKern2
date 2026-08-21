@@ -7,13 +7,14 @@ import traceback
 import vanilla
 import subprocess # for revealing exported font in Finder
 import re  # for displaying font file name
-# import threading # for managing progress bar
 import time # for managing progress bar
 from typing import Optional, Any
 from Foundation import NSMutableDictionary #, NSLog
 
 from AppKit import (
+	NSMenu,  # for the BubbleKern submenu
 	NSMenuItem,
+	NSEventModifierFlagOption,  # for the all-masters variant of a menu item
 	NSImage,  # for setting plus and minus button image
 	NSFont,  # for setting preview in Menlo
 	# NSDragOperationMove,  # currently useless
@@ -22,7 +23,9 @@ from AppKit import (
 	NSURL,  # for revealing exported fonts in Finder
 )
 
+import BKAutoBubble
 import BKCommonLogic
+import BKExport
 
 totalPairsPrefix = 'Total Pairs To Check : '
 
@@ -48,15 +51,6 @@ Menlo12 = NSFont.fontWithName_size_("Menlo", 12)
 # INITIATE LOGGING
 import logging
 import os
-# logPath = os.path.expanduser("~/Desktop/glyphs_bubblekern_debug.log")
-# logger = logging.getLogger("BKKerner")
-# logger.setLevel(logging.DEBUG)
-
-# if not logger.handlers:
-# 	handler = logging.FileHandler(logPath)
-# 	formatter = logging.Formatter("%(asctime)s %(message)s")
-# 	handler.setFormatter(formatter)
-# 	logger.addHandler(handler)
 
 def _setup_logger():
 	logger = logging.getLogger("BubbleKern")
@@ -89,20 +83,110 @@ class BubbleKernKerner(GeneralPlugin):
 			'en': 'BubbleKern Kerner…',
 			'ja': 'BubbleKern ダイアログ…'
 		})
-		# GSCallbackHandler.addCallback_forOperation_(self, "GSPrepareLayerCallback")
 
 	@objc.python_method
 	def start(self):  # STUFF TO UPON GLYPHS STARTUP
-		newMenuItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(self.name, self.showWindow_, "")
-		newMenuItem.setTarget_(self)
-		Glyphs.menu[EDIT_MENU].append(newMenuItem)
+		submenu = NSMenu.alloc().initWithTitle_('BubbleKern')
+		for title, action in (
+			(self.name, self.showWindow_),
+			('BubbleKern Settings…', self.openSettings_),
+		):
+			item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, '')
+			item.setTarget_(self)
+			submenu.addItem_(item)
+		submenu.addItem_(NSMenuItem.separatorItem())
+
+		generate = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			'Generate Auto Bubbles for Selected Glyphs', self.generateSelected_, '')
+		generate.setTarget_(self)
+		submenu.addItem_(generate)
+		# THE OPTION VARIANT. An alternate takes the place of the item above it
+		# while its modifier is held: same key equivalent, different mask.
+		everyMaster = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			'Generate Auto Bubbles for Selected Glyphs for all Masters',
+			self.generateAllMasters_, '')
+		everyMaster.setTarget_(self)
+		everyMaster.setKeyEquivalentModifierMask_(NSEventModifierFlagOption)
+		everyMaster.setAlternate_(True)
+		submenu.addItem_(everyMaster)
+
+		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('BubbleKern', None, '')
+		parent.setSubmenu_(submenu)
+		Glyphs.menu[EDIT_MENU].append(parent)
+		self.registerParameterSheet()
+
+	def registerParameterSheet(self):
+		# THE SETTINGS PARAMETER GETS ITS OWN EDITOR. Clicking its value in Font
+		# Info opens sliders instead of a text field; the string stays editable
+		# by hand for anyone who prefers that.
+		try:
+			from GlyphsApp import GSCallbackHandler
+			import BKAutoBubble
+			import BKParameterSheet
+			GSCallbackHandler.addCustomParameterSheetController_forParameter_(
+				BKParameterSheet.BubbleKernParameterSheet,
+				BKAutoBubble.SETTINGS_PARAMETER)
+		except Exception:
+			BKCommonLogic.log(
+				f'BubbleKern parameter sheet not registered: {traceback.format_exc()}',
+				error=True)
+
+	def openSettings_(self, sender):
+		# The window belongs to the TOOL, which Glyphs instantiates at launch
+		# alongside this one - both are principal classes of the same bundle.
+		try:
+			import BKTool
+			if BKTool.mainDrawingHandler is None:
+				BKCommonLogic.show_alert('BubbleKern Settings',
+					'The BubbleKern tool has not loaded, so its settings cannot open.',
+					cancel=False)
+				return
+			BKTool.mainDrawingHandler.openSettingsWindow()
+		except Exception:
+			BKCommonLogic.log(f'openSettings error: {traceback.format_exc()}', error=True)
+
+	def generateSelected_(self, sender):
+		self.generateBubbles(False)
+
+	def generateAllMasters_(self, sender):
+		self.generateBubbles(True)
+
+	@objc.python_method
+	def generateBubbles(self, allMasters):
+		"""Auto-generate both walls for the selected glyphs."""
+		try:
+			import BKBubbleStore
+			import BKTool
+			font = Glyphs.font
+			if font is None:
+				return
+			glyphs, seen = [], set()
+			for layer in font.selectedLayers:
+				glyph = layer.parent if isinstance(layer, GSLayer) else None
+				if glyph is not None and glyph.name not in seen:
+					seen.add(glyph.name)
+					glyphs.append(glyph)
+			masters = font.masters if allMasters else [font.selectedFontMaster]
+			layers = [glyph.layers[master.id] for glyph in glyphs for master in masters]
+			layers = [layer for layer in layers if layer is not None and layer.name is not None]
+			if not layers:
+				return
+			# THE STORE, NOT THE TOOL. Generating a bubble is writing userData
+			# on a layer and needs no canvas; going through the live tool meant
+			# this command failed outright when the tool had not been picked up
+			# yet. Only the redraw wants the tool, and only if there is one.
+			for isLeft in (True, False):
+				BKBubbleStore.autoGenerate(font, isLeft, layers=layers)
+			if BKTool.mainDrawingHandler is not None:
+				BKTool.mainDrawingHandler.refreshAfterWrite()
+		except Exception:
+			BKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def buildWindow(self):
 		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
 		self.w = vanilla.Window(
 			(230, 500),
-			# minSize=(200, 300),
 			maxSize=(2000, 2000),
 			title='BubbleKern Kerner',
 			autosaveName="com.Tosche.BubbleKernKerner.mainwindow"  # stores last window position and size
@@ -115,6 +199,20 @@ class BubbleKernKerner(GeneralPlugin):
 
 		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts", "Remove BubbleKern Data"])
 
+		self.buildKerningTab()
+		self.buildFontTab()
+		self.buildRemoveTab()
+
+		# LAYOUT WINDOW
+		rules = [
+			'H:|[tabs(>=100)]|',
+			'V:|-[tabs]|',
+		]
+		self.w.addAutoPosSizeRules(rules, None)
+
+	@objc.python_method
+	def buildKerningTab(self):
+		"""The presets table and what a run does with it."""
 		# GENERATE KERNING TAB
 		tab0 = self.w.tabs[0]  # STANDARD KERNIG GENERATION
 		tab0.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
@@ -168,14 +266,12 @@ class BubbleKernKerner(GeneralPlugin):
 		tableView.tableColumns()[1].setResizingMask_(1)
 		tableView.tableColumns()[2].setResizingMask_(0)
 		tableView.tableColumns()[3].setResizingMask_(0)
-		# tableView.tableColumns()[4].setResizingMask_(0)
 		tableView.setColumnAutoresizingStyle_(1)
 		# setResizingMask_() 0=Fixed, 1=Auto-Resizable (Not user-resizable). There may be more options?
 		# setColumnAutoresizingStyle accepts value from 0 to 5.
 		# For detail,see: http://api.monobjc.net/html/T_Monobjc_AppKit_NSTableViewColumnAutoresizingStyle.htm
 
 
-		# tab0.group0.sectionPreviewCaption = vanilla.TextBox('auto', "Section Preview", sizeStyle="small")
 		tab0.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
 		tab0.group0.preview._textView.setFont_(Menlo12)
 		tab0.group0.total = vanilla.TextBox('auto', totalPairsPrefix, alignment="right", sizeStyle="small")
@@ -200,10 +296,32 @@ class BubbleKernKerner(GeneralPlugin):
 
 		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
 		tab0.group1.progress.show(False)
+		# THE PAIRS THAT ACTUALLY OCCUR. A preset is a cartesian product and
+		# most of it never turns up in text; the list beside this plugin says
+		# which combinations do. It narrows the preset rather than replacing
+		# it, so the rows still decide which glyphs are in scope.
+		tab0.group1.relevantOnly = vanilla.CheckBox('auto', 'Only the most relevant pairs',
+			value=bool(BKAutoBubble._pref(BKAutoBubble.PREF_RELEVANT_ONLY, False)),
+			callback=self.toggleRelevantOnly, sizeStyle='small')
+		tab0.group1.relevantOnly.getNSButton().setToolTip_(
+			'Kern only the pairs that occur in running text, after André '
+			'Fuchs\u2019s kerning-pairs')
+		# WHAT A RUN PUTS IN THE FONT, ASKED WHERE THE RUN IS STARTED - not in
+		# the settings window, which is about what a bubble is shaped like. A
+		# wall does not change because the pair it kerns was written under a
+		# group name.
+		tab0.group1.writeGroups = vanilla.CheckBox('auto', 'Write groups, not pairs',
+			value=bool(BKAutoBubble._pref(BKAutoBubble.PREF_KERN_GROUPS, False)),
+			callback=self.toggleWriteGroups, sizeStyle='small')
+		tab0.group1.writeGroups.getNSButton().setToolTip_(
+			'Kern the groups the bubbles fall into, so one pair covers every '
+			'glyph that shares a wall')
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
 		rules = [
-			'H:|-[progress]-[allButton(==selButton)]-[selButton]-|',
+			'H:|-[relevantOnly]-[writeGroups]-[progress]-[allButton(==selButton)]-[selButton]-|',
+			'V:|-(12)-[relevantOnly(18)]',
+			'V:|-(12)-[writeGroups(18)]',
 			'V:|-(8)-[progress]-|',
 			'V:|-(8)-[allButton]-|',
 			'V:|-(8)-[selButton]-|',
@@ -217,6 +335,9 @@ class BubbleKernKerner(GeneralPlugin):
 		]
 		tab0.addAutoPosSizeRules(rules, None)
 
+	@objc.python_method
+	def buildFontTab(self):
+		"""Exporting a font with the bubbles baked in as BBLH."""
 		# GENERATE FONT TAB
 		tab1 = self.w.tabs[1]
 		tab1.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
@@ -245,7 +366,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		]
 		tab1.addAutoPosSizeRules(rules, None)
 
-
+	@objc.python_method
+	def buildRemoveTab(self):
+		"""Taking every trace of BubbleKern back out of the font."""
 		# REMOVE BUBBLEKERN TAB
 		tab2 = self.w.tabs[2]
 		filepath = self.font.filepath
@@ -263,13 +386,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		]
 		tab2.addAutoPosSizeRules(rules, None)
 
-		# LAYOUT WINDOW
-		rules = [
-			'H:|[tabs(>=100)]|',
-			'V:|-[tabs]|',
-		]
-		self.w.addAutoPosSizeRules(rules, None)
-
 	def showWindow_(self, sender):
 		try:
 			self.font = Glyphs.font
@@ -282,7 +398,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			self.loadPreferences()  # load permList
 			self.refreshTotal() # update total pairs count
 			self.w.open()
-		except:
+		except Exception:
 			log(f'showWindow_ error: {traceback.format_exc()}', error=True)
 
 	def windowShouldClose_(self, sender):  # User attempts to close the main window
@@ -344,15 +460,13 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			else: # presets selected
 				self.loadedPresetName = sender.getItem()
-				# self.refreshPopupButton() # will be done in loadPreferences()
 				self.loadPreferences()
-		except:
+		except Exception:
 			log(f'popupTasks error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def refreshPopupButton(self):  # refresh option popup items
 		try:
-			# log(self.presetsDic)
 			presetsDicNames = sorted([k for k in self.presetsDic.keys()])
 			thePopup = self.w.tabs[0].group0.optionsPopup
 
@@ -367,17 +481,16 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			# set selection to the loaded preset
 			thePopup.set(presetsDicNames.index(self.loadedPresetName))
 
-		except:
+		except Exception:
 			log(f'refreshPopupButton error: {traceback.format_exc()}', error=True)
 			
 
 	@objc.python_method
 	def loadPreferences(self, sender=None):
 		try:
-			permListUI = self.w.tabs[0].group0.permList
 			try:
 				presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"]
-			except: # if old BubbleKern is being used
+			except Exception: # if old BubbleKern is being used
 				presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
 				del Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
 				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = presetsDic
@@ -415,7 +528,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
 			else:  # presetsDic exists, but not validated
 				pass
-			# presetsDic = NSMutableDictionary.alloc().initWithDictionary_copyItems_(presetsDic, True)
 
 			# which dic to set
 			if sender == self.w.tabs[0].group0.optionsPopup:
@@ -439,8 +551,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 				self.refreshPopupButton()  # load popup
 
-				# self.w.tabs[0].group0.permList.set()
-		except:
+		except Exception:
 			log(f'loadPreferences error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -467,7 +578,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				self.presetsDic[self.loadedPresetName] = perms
 
 			Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
-		except:
+		except Exception:
 			log(f'SavePreferences error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -504,16 +615,60 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			if count <= 0:
 				lines += '(...)'
 			self.w.tabs[0].group0.preview.set(lines)
-		except:
+		except Exception:
 			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def toggleRelevantOnly(self, sender=None):
+		try:
+			Glyphs.defaults[BKAutoBubble.PREF_RELEVANT_ONLY] = bool(sender.get())
+			self.refreshTotal()
+		except Exception:
+			log(f'toggleRelevantOnly error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def toggleWriteGroups(self, sender=None):
+		try:
+			Glyphs.defaults[BKAutoBubble.PREF_KERN_GROUPS] = bool(sender.get())
+		except Exception:
+			log(f'toggleWriteGroups error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def relevantCount(self, permutations) -> int:
+		"""How many of the preset's pairs the relevant list keeps. -> int
+
+		Counted the same way the kerner builds them, rather than from the row
+		totals: those are a product per row, and duplicates across rows only
+		show up once the pairs are actually made.
+		"""
+		try:
+			font = self.font
+			if font is None:
+				return 0
+			relevant = BKAutoBubble.relevant_pair_names(
+				BKCommonLogic.namesByCharacter(font))
+			pairs = set()
+			for row in permutations:
+				lefts = self.cleanUpText(row['Left'])
+				rights = self.cleanUpText(row['Right'])
+				pairs.update((left, right) for left in lefts for right in rights)
+				if row['Add Flipped']:
+					pairs.update((right, left) for left in lefts for right in rights)
+			return len(pairs & relevant)
+		except Exception:
+			log(f'relevantCount error: {traceback.format_exc()}', error=True)
+			return 0
 
 	@objc.python_method
 	def refreshTotal(self): # preview EditText
 		try:
 			permutations = self.w.tabs[0].group0.permList.get()
-			totalPairs = sum([int(p['Pairs']) for p in permutations])
+			if bool(BKAutoBubble._pref(BKAutoBubble.PREF_RELEVANT_ONLY, False)):
+				totalPairs = self.relevantCount(permutations)
+			else:
+				totalPairs = sum([int(p['Pairs']) for p in permutations])
 			self.w.tabs[0].group0.total.set(totalPairsPrefix + format(totalPairs, ','))
-		except:
+		except Exception:
 			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -522,9 +677,8 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			text = re.sub("[/,\n\t]", " ", text)
 			text = text.split()  # turn to a list
 			return text
-		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
+		except Exception:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
 			log(f'cleanUpText error: {traceback.format_exc()}', error=True)
-			# return text
 
 	@objc.python_method
 	def permListSelected(self, sender):  # when permutation list line has been selected
@@ -542,7 +696,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			selectedIndexes = sender.getSelectedIndexes()
 			editedIndex = sender.getEditedIndex()
 			editedRow = permutations[editedIndex]
-			# log(editedRow)
 			pairsCount = self.pairsCount(editedRow['Left'], editedRow['Right'], editedRow['Add Flipped'])
 			permutations[editedIndex]['Pairs'] = pairsCount
 			sender.set(permutations)
@@ -557,13 +710,12 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			# updating the total number of pairs
 			self.refreshTotal()
-		except:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
+		except Exception:  # The text wasn't ascii-decodable. Probably not a string of glyph names.
 			log(f'checkBoxClicked error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def permListDoubleClick(self, sender):  # when permutation list line has been double-clicked, open sheet
 		try:
-			# log('column double-clicked')
 			index = sender.getSelectedIndexes()[0]
 
 			groupText0 = sender.get()[index]["Left"]
@@ -592,14 +744,14 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			]
 			self.s.addAutoPosSizeRules(rules)
 			self.s.open()
-		except:
+		except Exception:
 			log(f'permListDoubleClick error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def cancelEditPermutation(self, sender):  # Close sheet by clicking cancel (esc is implemented as subclass)
 		try:
 			self.s.close()
-		except:
+		except Exception:
 			log(f'cancelEditPermutation error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -612,7 +764,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			newText1 = ' '.join(self.cleanUpText(text1))
 			newText2 = ' '.join(self.cleanUpText(text2))
 			if not newText1 or not newText2:
-				# Message('', "Invalid text!")
 				pass
 			else:
 				permListUI = self.w.tabs[0].group0.permList
@@ -627,7 +778,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 				# need to refresh section preview
 				self.refreshPreview()
-		except:
+		except Exception:
 			log(f'confirmEditPermutation error: {traceback.format_exc()}', error=True)
 
 # DRAG & DROP
@@ -635,20 +786,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def makeDragDataCallback(self, index):
 		try:
-			# self.dragIndex = index # index of item being dragged
 			permList = self.w.tabs[0].group0.permList
-			listItems = permList.get()
-
-			# determine if BezierPath is being dragged
-			# if 'BezierPath' in listItems[index]:
-			# 	indexes = [index]
-			# 	for i in range(index+1, len(listItems)):
-			# 		if 'BezierPath' in listItems[i]:
-			# 			break
-			# 		else:
-			# 			indexes.append(i)
-			# else:
-			# 	indexes = [index]
 
 			indexes = [index]
 
@@ -657,7 +795,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				"Tosche.BubbleKernKerner.permListIndexes": indexes
 			}
 			return typesAndValues
-		except:
+		except Exception:
 			log(f'makeDragDataCallback error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -687,8 +825,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				indexes = sender.getDropItemValues(items, "Tosche.BubbleKernKerner.permListIndexes")[0]
 				if endIndex > indexes[0]:
 					endIndex -= 1
-				# log(f'started = {indexes}')
-				# log(f'proposed = {endIndex}')
 				listItems = list(permList.get())
 
 				movingChunk = [listItems.pop(i) for i in reversed(indexes)][::-1]
@@ -698,13 +834,8 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				self.savePreferences()
 
 				# Do the same in userData too
-				# userData = self.font.userData['BubbleKern']
-				# movingChunk = [userData.pop(i) for i in reversed(indexes)][::-1]
-				# userData[endIndex:endIndex] = movingChunk
-				# self.font.userData['BubbleKern'] = userData
-				# self.LoadPreferences(setIndex=endIndex)
 			return True
-		except:
+		except Exception:
 			log(f'performDropCallback error: {traceback.format_exc()}', error=True)
 # / DRAG & DROP
 
@@ -719,7 +850,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			# enable delButton if there's multiple: maybe move elsewhere
 			if len(listToSet) > 1:
 				self.w.tabs[0].group0.delButton.enable(True)
-		except:
+		except Exception:
 			log(f'addButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -731,13 +862,13 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			try: # try because nothing may be selected
 				del listToSet[index]
 				self.w.tabs[0].group0.permList.set(listToSet)
-			except:
+			except Exception:
 				pass
 
 			# disable delButton if there's only one item: maybe move elsewhere
 			if len(listToSet) == 1:
 				self.w.tabs[0].group0.delButton.enable(False)
-		except:
+		except Exception:
 			log(f'delButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
@@ -752,14 +883,13 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			for progress in BKCommonLogic.kernOpenType(presetName=self.loadedPresetName, selectedLayersOnly=selGlyphs):
 
-				# time.sleep(.01)
 				self.w.tabs[0].group1.progress.set(progress)
 
 			time.sleep(.5)
 			self.w.tabs[0].group1.progress.show(False)
 
 			self.font.enableUpdateInterface()
-		except:
+		except Exception:
 			log(f'BubbleKernMain error: {traceback.format_exc()}', error=True)
 
 	def interpolateLayer_glyph_interpolation_error_(self, layer: GSLayer, glyph: GSGlyph, interpolation: dict, error: Any):
@@ -789,9 +919,8 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		folderPath = GetFolder(message="Select a saving location.")
 
 		if folderPath:
-			exportedPaths = BKCommonLogic.writeFontWithBBLH(folderPath, self.font)
+			exportedPaths = BKExport.writeFontWithBBLH(folderPath, self.font)
 			if exportedPaths:
-				# Glyphs.showNotification("Success", "Bubbled font has been generated successfully!")
 				self.w.hide()
 				urls = [NSURL.fileURLWithPath_(p) for p in exportedPaths]
 				NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_(urls)
@@ -809,7 +938,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			del self.font.userData['useBubbleKern']
 			try:
 				del self.font.tempData['useBubbleKern']
-			except:
+			except Exception:
 				pass
 
 			keys = (
@@ -822,11 +951,11 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					for key in keys:
 						try:
 							del gl.userData[key]
-						except:
+						except Exception:
 							pass
 					try:
 						del gl.tempData['bubbles']
-					except:
+					except Exception:
 						pass
-		except:
+		except Exception:
 			pass
