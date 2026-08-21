@@ -1,1 +1,4 @@
 __pycache__
+
+# Glyphs writes this beside the file it is recovering; it is not a source file.
+*(Autosaved).glyphs
