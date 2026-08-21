@@ -673,6 +673,69 @@ class BubbleKernTool(SelectTool):
 		except Exception:
 			log(f'updateUI error: {traceback.format_exc()}', error=True)
 
+	@objc.python_method
+	def regenerateIfStale(self, layer):
+		# THE OUTLINE MOVED, SO THE WALL DRAWN ROUND IT IS DRAWN AGAIN.
+		#
+		# ONLY SIDES THAT OWN THEIR NODES, which is what `isStale` already
+		# answers: a referred or mirrored side is resolved fresh every time, and
+		# one drawn before the box was recorded has nothing to compare against.
+		#
+		# RUN FROM updateUI, LIKE followSpacing, AND IT CONVERGES THE SAME WAY:
+		# writeBubble records the layer's box as it now is, so the side is not
+		# stale on the interface update this write itself causes.
+		#
+		# AFTER followSpacing, so a sidebearing change is taken by the cheap
+		# shift rather than by measuring the glyph again.
+		try:
+			font = layer.font()
+			if font is None:
+				return
+			# THE COMMON CASE IS FOUR NUMBERS COMPARED AND NOTHING DONE, which is
+			# what keeps this affordable on every interface update.
+			stale = [side for side in (auto.LEFT, auto.RIGHT)
+				if needsGenerating(layer, side.isLeft)]
+			if not stale:
+				return
+			master = layer.associatedFontMaster()
+			settings = auto.auto_settings(font, master)
+			grid = auto.resolve_grid(font, master)
+			for side in stale:
+				nodes = auto.auto_bubble_nodes(
+					layer, side, gap=settings['gap'], step=settings['step'],
+					tolerance=settings['tolerance'], max_nodes=settings['max_nodes'],
+					grid=grid, slope=settings['slope'],
+					max_inset=settings['max_inset'], amplitude=settings['amplitude'])
+				if nodes:
+					store.writeBubble(layer, side, nodes=nodes)
+		except Exception:
+			log(f'regenerateIfStale error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def followSpacing(self, layer):
+		# CHANGING A SIDEBEARING TRANSLATES THE OUTLINE AND TELLS NOBODY - THERE
+		# IS NO CALLBACK FOR IT - SO THE BUBBLE IS LEFT BEHIND, STILL DESCRIBING
+		# WHERE THE INK USED TO BE. THE BOX RECORDED BESIDE EACH SIDE IS ENOUGH
+		# TO SEE IT: A SPACING CHANGE MOVES THAT BOX WITHOUT RESIZING IT.
+		#
+		# RUN FROM updateUI, WHICH FIRES ON UPDATEINTERFACE. WRITING HERE IS SAFE
+		# BECAUSE IT CONVERGES: THE RECORD IS UPDATED IN THE SAME PASS, SO THE
+		# NEXT ONE FINDS NOTHING TO DO.
+		try:
+			if not auto._pref(auto.PREF_FOLLOW_SPACING, True):
+				return
+			if layer is None or layer.name is None:
+				return
+			moved = False
+			for side in (auto.LEFT, auto.RIGHT):
+				if shiftBubbleForSpacing(layer, side):
+					moved = True
+			if moved:
+				self.loadNodesFromLayer(layer, forceLoad=True)
+				Glyphs.redraw()
+		except Exception:
+			log(f'followSpacing error: {traceback.format_exc()}', error=True)
+
 	def view(self):  # SHOWS INFO BOX; CALLED CONSTANTLY
 		# RETURN NONE WHEN YOU WANT TO DISABLE INFO BOX
 		#
@@ -693,6 +756,28 @@ class BubbleKernTool(SelectTool):
 				tf.setTextColor_(NSColor.systemRedColor())
 			else:
 				tf.setTextColor_(NSColor.textColor())
+
+	@objc.python_method
+	def setAuto(self, isLeft, layer):
+		# HAND THE SIDE TO THE GENERATOR. It owns its nodes like any drawn
+		# side - the flag only says who redraws them, and regenerateIfStale
+		# does that here and again on every outline change from now on.
+		try:
+			side = of(isLeft)
+			for key in (side.key('Mirror'), side.key('Refer')):
+				if layer.userData[key]:
+					del layer.userData[key]
+			del layer.tempData[TempDataBubblesKey]
+			layer.userData[side.key('Auto')] = 1
+			# THE BUTTON'S OWN PATH, not the staleness one: asking for `auto`
+			# is asking for the generated wall NOW, whatever is drawn there
+			# already. Staleness only ever redraws what has stopped fitting,
+			# so a side that still fit its outline kept the wall it had and
+			# pressing refresh afterwards changed it - which is the one thing
+			# `auto` is supposed to promise it will not do.
+			self.autoGenerate(isLeft, layers=[layer])
+		except Exception:
+			log(f'setAuto error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def saveInfoToLayer(self, layer):  # CALLED AFTER UI CHANGE. SAVES THE REFERENCE FIELDS TO LAYER USERDATA
@@ -1860,6 +1945,34 @@ class BubbleKernTool(SelectTool):
 		except Exception:
 			log(f'refreshAfterWrite error: {traceback.format_exc()}', error=True)
 
+	@objc.python_method
+	def autoGenerate(self, isLeft, layers=None):  # ONE SIDE, THE SELECTED GLYPHS
+		# THE DRAWING IS THE STORE'S; SAYING SO AND REDRAWING ARE THIS TOOL'S.
+		# Split because the Kerner wants the first half, and had no business
+		# needing a tool to be loaded before it could have it.
+		try:
+			font = Glyphs.font
+			if font is None:
+				return
+			side = auto.LEFT if isLeft else auto.RIGHT
+			done, merged, skipped = store.autoGenerate(font, isLeft, layers)
+			report(f'auto-generated {done} {side} bubble(s), {merged} merged, {skipped} skipped')
+			self.refreshAfterWrite()
+		except Exception:
+			log(f'autoGenerate error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def syncBubble(self, isLeft, layers=None):
+		try:
+			font = Glyphs.font
+			if font is None:
+				return
+			done, side, other = store.syncBubble(font, isLeft, layers)
+			report(f'{done} {side} side(s) now sync from {other}')
+			self.refreshAfterWrite()
+		except Exception:
+			log(f'syncBubble error: {traceback.format_exc()}', error=True)
+
 	# --- PREVIEWING THE BUBBLE KERNING IN THE BOTTOM BAR ---
 	# THE PREVIEW LAYS ITS TEXT OUT FROM font.kerning, SO NOTHING DRAWN CAN MOVE
 	# THOSE GLYPHS: TO SEE BUBBLE KERNING DOWN THERE THE VALUES HAVE TO EXIST.
@@ -1869,6 +1982,132 @@ class BubbleKernTool(SelectTool):
 	# WHOLE SAFETY OF THE FEATURE: THERE IS NO WILL-SAVE CALLBACK IN GLYPHS, SO
 	# A ⌘S WHILE THE PREVIEW IS ON DOES BAKE THESE IN, AND THE RECORD IS WHAT
 	# LETS THE NEXT ACTIVATION TAKE THEM BACK OUT AGAIN.
+
+	@objc.python_method
+	def openAutoGroupWindow(self):
+		try:
+			font = Glyphs.font
+			if font is None:
+				return
+			# ON A SHEET OVER THE PANEL, like the fit dialogue. It is reached from
+			# the panel's own action menu, it asks two questions and then goes
+			# away, and a free-floating window for that is one more thing to find
+			# again behind the one it came from.
+			parent = getattr(self, 'setW', None)
+			if parent is None:
+				return
+			# TWO QUESTIONS WIDE: everything else is set in the window this sheet
+			# is standing on.
+			self.autoW = vanilla.Sheet((240, 130), parent)
+			w = self.autoW
+			w.sidesLabel = vanilla.TextBox((15, 16, 40, 20), 'Sides', sizeStyle='small')
+			w.sides = vanilla.PopUpButton((60, 14, -15, 20), ['Both', 'Left', 'Right'])
+			# ON THE MARGIN, NOT UNDER THE POPUP. The two are separate questions
+			# and only one of them has a label to be indented past.
+			w.overwrite = vanilla.CheckBox((18, 44, -15, 20),
+				'Overwrite existing bubbles', sizeStyle='small')
+			# THE FULL WIDTH BETWEEN THEM, so the sheet ends on one line.
+			w.cancel = vanilla.Button((15, 74, 100, 20), 'Cancel',
+				callback=self.closeAutoGroupWindow)
+			w.apply = vanilla.Button((-115, 74, 100, 20), 'Apply',
+				callback=self.applyAutoGroup)
+			w.report = vanilla.TextBox((15, 102, -15, 20), '', sizeStyle='small')
+			# NO HALOES. The default button is already saying where the return
+			# key goes, and a ring round the popup as well is the sheet shouting
+			# two answers to one question.
+			for control in (w.sides, w.overwrite, w.cancel, w.apply):
+				native = (control.getNSPopUpButton()
+					if hasattr(control, 'getNSPopUpButton') else control.getNSButton())
+				native.setFocusRingType_(NSFocusRingTypeNone)
+			w.setDefaultButton(w.apply)
+			w.open()
+		except Exception:
+			log(f'openAutoGroupWindow error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def closeAutoGroupWindow(self, sender=None):
+		try:
+			self.autoW.close()
+		except Exception:
+			pass
+
+	@objc.python_method
+	def applyAutoGroup(self, sender):
+		try:
+			font = Glyphs.font
+			if font is None:
+				return
+			w = self.autoW
+			master = font.selectedFontMaster
+			settings = auto.auto_settings(font, master)
+			sides = ((auto.LEFT, auto.RIGHT), (auto.LEFT,), (auto.RIGHT,))[w.sides.get()]
+			overwrite = bool(w.overwrite.get())
+			grid = auto.resolve_grid(font, master)
+
+			w.report.set('Measuring…')
+			font.disableUpdateInterface()
+			try:
+				plan = auto.auto_bubble_plan(
+					font, master,
+					gap=settings['gap'], step=settings['step'],
+					tolerance=settings['tolerance'], max_nodes=settings['max_nodes'],
+					grid=grid, sides=sides, slope=settings['slope'], max_inset=settings['max_inset'], amplitude=settings['amplitude'],
+				)
+				drawn, referred, kept = store.writePlan(font, master, plan, sides, overwrite)
+			finally:
+				font.enableUpdateInterface()
+
+			summary = f'{drawn} drawn, {referred} grouped, {kept} left alone'
+			w.report.set(summary)
+			log(f'Set Refer Glyphs automatically: {summary}')
+			report(summary)
+			# THE QUESTIONS GO AWAY AND THE ANSWER TAKES THEIR PLACE. One turn of
+			# the run loop between them, because a sheet cannot be put up on a
+			# window that is still taking the last one down.
+			groups = store.planGroups(plan, sides)
+			if groups:
+				self.closeAutoGroupWindow()
+				NSOperationQueue.mainQueue().addOperationWithBlock_(
+					lambda: self.openAutoGroupResults(groups, summary))
+			self.refreshAfterWrite()
+		except Exception:
+			log(f'applyAutoGroup error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def openAutoGroupResults(self, groups, summary):
+		"""Show what was grouped, as the glyphs themselves.
+
+		A count of how many sides were grouped says nothing about whether the
+		grouping was any good. The glyphs side by side with the measured wall on
+		each one say it at a glance, which is what AZ Fingerprints' Groups tab is
+		for and why this borrows its shape.
+		"""
+		try:
+			parent = getattr(self, 'setW', None)
+			font = Glyphs.font
+			if parent is None or font is None or not groups:
+				return
+			self.groupW = vanilla.Sheet((560, 450), parent)
+			w = self.groupW
+			w.info = vanilla.TextBox((15, 14, -15, 17), summary, sizeStyle='small')
+			grid = BKGroupGridView.alloc().initWithFrame_(
+				NSMakeRect(0, 0, 528, 1))
+			grid.setGroups(groups, font, font.selectedFontMaster.id)
+			w.groups = vanilla.ScrollView((15, 40, -15, -45), grid,
+				hasHorizontalScroller=False)
+			w.done = vanilla.Button((-95, -32, 80, 20), 'Done',
+				callback=self.closeAutoGroupResults, sizeStyle='small')
+			w.setDefaultButton(w.done)
+			w.open()
+		except Exception:
+			log(f'openAutoGroupResults error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def closeAutoGroupResults(self, sender=None):
+		try:
+			self.groupW.close()
+		except Exception:
+			pass
 
 
 	# --- FITTING THE SETTINGS TO KERNING DONE BY HAND ---
@@ -2257,6 +2496,9 @@ class BubbleKernTool(SelectTool):
 				None, NSPoint(0, button.frame().size.height + 2), button)
 		except Exception:
 			log(f'actionMenu error: {traceback.format_exc()}', error=True)
+
+	def autoGroupFont_(self, sender):
+		self.openAutoGroupWindow()
 
 	def fitFromKerning_(self, sender):
 		self.openFitTextWindow()
