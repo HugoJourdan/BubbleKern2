@@ -1289,6 +1289,32 @@ class BubbleKernTool(SelectTool):
 			Glyphs.redraw()
 
 	@objc.python_method
+	def previewKerningSoon(self):
+		"""One apply for a burst of drag events, not one for each. -> None
+
+		`applyPreviewKerning` takes every pair in the tab back out of the font
+		and writes them again, which is a lot of document to churn for one
+		mouse-moved event - and the drag sends them as fast as the hand moves.
+		Queued instead, with a flag so a second event lands on the run already
+		scheduled, the burst costs one apply rather than one apiece.
+
+		Never on a timer: a drag that never pauses would never see its numbers.
+		The next turn of the run loop always comes.
+		"""
+		if getattr(self, 'previewKerningPending', False):
+			return
+		self.previewKerningPending = True
+
+		def run():
+			self.previewKerningPending = False
+			try:
+				store.applyPreviewKerning()
+				Glyphs.redraw()
+			except Exception:
+				log(f'previewKerningSoon error: {traceback.format_exc()}', error=True)
+		NSOperationQueue.mainQueue().addOperationWithBlock_(run)
+
+	@objc.python_method
 	def selectedBubbleNode(self, layer):
 		"""The one bubble node selected, and its side. -> (node, isRight)
 
@@ -1568,6 +1594,11 @@ class BubbleKernTool(SelectTool):
 		NSOperationQueue.mainQueue().addOperationWithBlock_(
 			lambda: self.decomposeBubble(False))
 
+	def openSettings_(self, sender):
+		# ONE TURN LATER, like every other menu item here: putting a window up
+		# while AppKit is still taking the menu down is the deadlock.
+		NSOperationQueue.mainQueue().addOperationWithBlock_(self.openSettingsWindow)
+
 	def insertTab_(self, sender):  # WHEN TAB IS PRESSED
 		self._selectNext(1)
 
@@ -1842,9 +1873,628 @@ class BubbleKernTool(SelectTool):
 
 	# --- FITTING THE SETTINGS TO KERNING DONE BY HAND ---
 
+	@objc.python_method
+	def fitSettings(self, sender=None):
+		# THE GUIDE: KERN A HANDFUL OF PAIRS THE WAY YOU WANT THEM, AND LET THE
+		# SEARCH FIND THE WALL THAT AGREES WITH YOU ON THEM.
+		try:
+			font = Glyphs.font
+			if font is None:
+				show_alert('Auto-settings based on Kerning', 'Open a font first.', cancel=False)
+				return
+			master = font.selectedFontMaster
+			text = auto._pref(auto.PREF_FIT_TEXT, None) or FIT_TEXT
+			targets, missing = store.kerningTargets(font, master, text)
+			if len(targets) < 3:
+				# THE TAB IS THE POINT: there is nothing to fit against yet, and
+				# what you need next is the string in front of you to kern.
+				try:
+					font.newTab(text)
+				except Exception:
+					log(f'newTab error: {traceback.format_exc()}', error=True)
+				show_alert('Auto-settings based on Kerning',
+					f'Only {len(targets)} of the {len(targets) + len(missing)} pairs in '
+					f'\u201c{text}\u201d are kerned in this master. I have opened a tab with it: '
+					'kern them the way you want them, then run this again.', cancel=False)
+				return
+
+			step = auto.raster_step(font)
+			profiles, geometry = {}, {}
+			for name in {name for pair in targets for name in pair[:2]}:
+				layer = store.layerFor(font, name, master)
+				if layer is None:
+					continue
+				scanned = auto.scan_layer(layer, step, skip_marks=True)
+				if scanned is None or len(scanned[0]) < auto.MIN_ROWS_TO_MEASURE:
+					continue
+				profiles[name] = auto.kern_profiles(scanned[0], layer.width, step)
+				low_y, high_y = auto.layer_span(layer, master)
+				geometry[name] = (low_y, high_y, layer.width)
+
+			settings = auto.auto_settings(font, master)
+			grid = auto.resolve_grid(font, master)
+			arguments = (profiles, geometry, targets, step,
+				settings['tolerance'], settings['max_nodes'], grid)
+			# The settings as they stand, scored the same way, so the report can
+			# say whether the search actually found anything.
+			angle = auto._number(auto._pref(auto.PREF_WALL_ANGLE, None), auto.WALL_ANGLE)
+			inset = auto._amount(auto._pref(auto.PREF_MAX_INSET, None), auto.MAX_INSET_PERCENT, auto.INSET_RANGE)
+			amplitude = min(100.0, auto._number(auto._pref(auto.PREF_AMPLITUDE, None), 100.0))
+			# Fit is a percentage of the em everywhere a person sees it, and
+			# units everywhere the geometry does.
+			spaces = tuple(font.upm * percent / 100.0 for percent in auto.FIT_PERCENTS)
+			before = auto.fit_settings(*arguments, angles=(angle,), insets=(inset,),
+				amplitudes=(amplitude,), spaces=(auto.fit_space(font, master),),
+				align=settings['align'])
+			best = auto.fit_settings(*arguments, spaces=spaces, align=settings['align'])
+			if best is None:
+				show_alert('Auto-settings based on Kerning',
+					'None of those pairs could be measured - they may be marks, or '
+					'glyphs with no outline.', cancel=False)
+				return
+
+			Glyphs.defaults[auto.PREF_WALL_ANGLE] = str(int(best['angle']))
+			Glyphs.defaults[auto.PREF_MAX_INSET] = str(int(best['inset']))
+			Glyphs.defaults[auto.PREF_AMPLITUDE] = str(int(best['amplitude']))
+			Glyphs.defaults[auto.PREF_FIT] = str(round(best['space'] / float(font.upm) * 100.0, 2))
+			window = getattr(self, 'setW', None)
+			if window is not None:
+				try:
+					window.bend.set(best['angle'])
+					window.depth.set(best['inset'])
+					window.amplitude.set(best['amplitude'])
+					window.fit.set(best['space'] / float(font.upm) * 100.0)
+					self.updateReadouts()
+				except Exception:
+					pass
+			self.refreshPreview()
+			best['fitPercent'] = best['space'] / float(font.upm) * 100.0
+			show_alert('Auto-settings based on Kerning', self.fitReport(best, before, missing), cancel=False)
+		except Exception:
+			log(f'fitSettings error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def fitReport(self, best, before, missing=()):
+		lines = [
+			f"Max turn {int(best['angle'])}°, Depth {int(best['inset'])}%, "
+			f"Amplitude {int(best['amplitude'])}%, Fit {best['fitPercent']:+.2f}%",
+			'',
+			f"Off by {best['error']:.0f} units on average over {best['pairs']} pairs"
+			+ (f", was {before['error']:.0f}." if before is not None else '.'),
+		]
+		bias = sum(generated - wanted for _, _, wanted, generated in best['misses']) / len(best['misses'])
+		if abs(bias) >= 5:
+			side = 'looser' if bias > 0 else 'tighter'
+			# No prescription: the gap is each glyph's own sidebearing and there
+			# is no knob for it, so a uniform bias is the spacing talking.
+			lines.append(f'Everything lands about {abs(bias):.0f} units {side} than you kerned it, '
+				f'evenly - which is spacing rather than bubble shape.')
+		worst = sorted(best['misses'], key=lambda miss: -abs(miss[3] - miss[2]))[:5]
+		if worst:
+			lines += ['', 'Furthest off:']
+			lines += [f'    {left} {right}    you {wanted:.0f}, this {generated:.0f}'
+			          for left, right, wanted, generated in worst]
+		if missing:
+			named = ', '.join(f'{left} {right}' for left, right in missing[:6])
+			lines += ['', f'{len(missing)} pairs in the string are not kerned and were '
+				f'left out: {named}.']
+		if best['unreachable']:
+			lines += ['', f"{best['unreachable']} of them open up rather than tighten. A wall "
+				'reaches no further out than its own ink, so two of them can do no better '
+				'than touch and no setting can reach those.']
+		return '\n'.join(lines)
+
 	# --- SETTINGS WINDOW ---
 
+	@objc.python_method
+	def openSettingsWindow(self):
+		try:
+			# FLOATING: THE POINT OF THIS WINDOW IS TO TURN A KNOB AND LOOK AT THE
+			# CANVAS, WHICH IS NOT SOMETHING A WINDOW THAT HIDES BEHIND IT CAN DO.
+			self.setW = vanilla.FloatingWindow((700, 398), 'BubbleKern Settings')
+			w = self.setW
+			# LANDSCAPE, IN TWO COLUMNS, with a rule down the middle: the wall
+			# settings above it, and below, what the kerner does with the walls
+			# once drawn.
+			left, right, midline = 15, 365, 350
+			# SLIDERS, NOT FIELDS: every one of these is a taste with a range,
+			# and a number typed outside it was never going to draw anything.
+			values = self.settingValues()
+
+			self.buildPreviewSection(w)
+			self.buildShapeSection(w, left, right, values)
+			self.buildKernerSection(w, left, right, midline, values)
+
+			w.bind('close', self.closeSettingsWindow)
+			# ONE PATH INTO THE CONTROLS, opening included: the popup has to say
+			# where the values came from, and only loadSettings knows.
+			self.loadSettings()
+			Glyphs.addCallback(self.settingsInterfaceUpdate, UPDATEINTERFACE)
+			w.open()
+		except Exception:
+			log(f'openSettingsWindow error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def settingRow(self, w, x, top, key, label, span, value, wide=True,
+			ticks=None, stop=False):
+		"""One labelled slider with its readout, at (x, top)."""
+		# TICKS ARE MARKS, NOT STOPS. `stopOnTickMarks` put the slider on a
+		# handful of steps and made every value between them unreachable;
+		# drawn and not stopped on, they say what the scale is and let the
+		# readout beside them say where it is.
+		#
+		# ONE ROW PER SETTING, from the shared table: a control here and a
+		# control in the Font Info sheet that disagreed about a range would
+		# be a value one of them could not reach.
+		# `Amplitude` sets the compact label's width: it measures 53pt at this
+		# size, and the 50 it had - with the slider starting inside it at 56 -
+		# cut the word twice over.
+		labelWidth, slid, span_, readout, readWidth = (
+			(72, 86, 160, 252, 60) if wide else (62, 76, 94, 174, 44))
+		setattr(w, key + 'Label',
+			vanilla.TextBox((x + 10, top + 2, labelWidth, 16), label,
+				sizeStyle='small'))
+		setattr(w, key, vanilla.Slider((x + slid, top + 2, span_, 16),
+			minValue=span[0], maxValue=span[1], value=value,
+			tickMarkCount=ticks, stopOnTickMarks=stop,
+			callback=self.applySettings, sizeStyle='mini'))
+		setattr(w, key + 'Value',
+			vanilla.TextBox((x + readout, top + 2, readWidth, 16), '',
+				sizeStyle='small'))
+
+	@objc.python_method
+	def buildPreviewSection(self, w):
+		"""The line of text at the top, and everything that acts on it."""
+		# THE PREVIEW FIRST: it is what the rest of this window is for.
+		w.previewText = vanilla.EditText((15, 10, -15, 20),
+			auto._pref(auto.PREF_PREVIEW_TEXT, None) or '',
+			continuous=True, callback=self.applyPreviewText, sizeStyle='small')
+		# EMPTY IS AN ANSWER, so it says which one it is.
+		w.previewText.getNSTextField().setPlaceholderString_(
+			'The tab in front')
+		# EVERYTHING ABOUT THE PREVIEW, ON THE PREVIEW: one drawing, with a
+		# size slider along the top rail and the mode button beside it, and
+		# the drawing keeping clear of both.
+		w.previewBox = vanilla.Group((15, 36, -15, 190))
+		box = w.previewBox
+		self.previewView = preview.BubbleKernPreviewView.alloc().initWithFrame_(
+			NSMakeRect(0, 0, 670, 190))
+		self.previewView.setAutoresizingMask_(18)  # width and height sizable
+		box.getNSView().addSubview_(self.previewView)
+		box.sizeSlider = vanilla.Slider((-128, 6, 80, 16),
+			minValue=preview.PREVIEW_SIZE_RANGE[0],
+			maxValue=preview.PREVIEW_SIZE_RANGE[1],
+			value=auto._amount(auto._pref(auto.PREF_PREVIEW_SIZE, None), 100.0,
+				preview.PREVIEW_SIZE_RANGE),
+			callback=self.applyPreviewSize, sizeStyle='mini')
+		box.sizeSlider.getNSSlider().setToolTip_('How big the preview draws it')
+		# WHAT TO SHOW, IN ONE BUTTON, ON THE TOP RAIL AFTER THE SLIDER.
+		# BUILT LIKE THE ACTION BUTTON ON THE RIGHT, not merely near it: a
+		# SquareButton draws a flat square bezel and a Button a rounded one.
+		# Same class, same 28 by 20, same gear.
+		box.previewGear = vanilla.Button((-43, 3, 28, 20), '',
+			callback=self.previewMenu, sizeStyle='small')
+		box.previewGear.getNSButton().setToolTip_('What the preview draws')
+		setPreviewGear(box.previewGear, bool(auto._pref(auto.PREF_PREVIEW_WALLS, True))
+			or bool(auto._pref(auto.PREF_PREVIEW_KERNED, True)))
+
+	@objc.python_method
+	def buildShapeSection(self, w, left, right, values):
+		"""What a bubble is shaped like: the three sliders and the grid."""
+		w.line0 = vanilla.HorizontalLine((15, 236, -15, 1))
+		w.shapeTitle = vanilla.TextBox((15, 246, 170, 16), 'KernBubbles Settings')
+		# UNDER A GEAR, the way a macOS options menu is spelled. Everything
+		# here is font-wide and done once a session - grouping the font,
+		# fitting the settings to the kerning already in it, and putting
+		# those settings on the clipboard - and three buttons across the
+		# window said so at the width of three sentences.
+		w.copyButton = vanilla.Button((-43, 244, 28, 20), '',
+			callback=self.actionMenu, sizeStyle='small')
+		gear = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+			GEAR_SYMBOL, 'Options')
+		if gear is not None:
+			w.copyButton.getNSButton().setImage_(gear)
+			w.copyButton.getNSButton().setImagePosition_(NSImageOnly)
+		w.copyButton.getNSButton().setToolTip_(
+			'Set the refer glyphs automatically, fit these settings to the '
+			'kerning already in the font, or copy '
+			'them as a custom parameter')
+
+		# THE THREE THAT SHAPE THE WALL, ONE UNDER THE OTHER: three parts of
+		# one decision, one column of labels, one of tracks, one of numbers.
+		# Each slider is the full width, which is the resolution the hand
+		# gets.
+		for index, (key, label, span, form) in enumerate(auto.SETTING_UI[:3]):
+			self.settingRow(w, left, 272 + index * 24, key, label, span,
+					values[key])
+		# THE GRID BESIDE THEM, in the room the stack gives back. It is the
+		# same kind of thing - where a bubble node may land - so it keeps
+		# the company it had.
+		w.on = vanilla.CheckBox((right, 272, 190, 18), 'Snap bubble nodes to a grid',
+			value=values['grid'] > 0, callback=self.applySettings,
+			sizeStyle='small')
+		w.yLabel = vanilla.TextBox((right + 197, 273, 12, 16), 'Y', sizeStyle='small')
+		w.gridY = NudgeEditText((right + 211, 271, 50, 19), str(int(values['gridY'])),
+			callback=self.applySettings, sizeStyle='small')
+
+	@objc.python_method
+	def buildKernerSection(self, w, left, right, midline, values):
+		"""What the kerner does with the walls once they are drawn."""
+		# WHAT THE KERNER DOES WITH THEM, under the rule. Fit moves no
+		# wall: the bubbles stay where the sliders above put them, and this
+		# decides how much air is left between two of them, once, for every
+		# pair in the font.
+		w.line = vanilla.HorizontalLine((15, 352, -15, 1))
+		fitKey, fitTitle, fitSpan, fitForm = auto.SETTING_UI[3]
+		# A TICK EVERY HALF A PER CENT of the em across the range, and the
+		# slider stops on them: unlike the three above, this is a number nobody
+		# wants to land between - it is the air left between every pair in the
+		# font, and a half is already finer than that reads.
+		self.settingRow(w, left, 364, fitKey, fitTitle, fitSpan, values['fit'],
+			ticks=int(round((fitSpan[1] - fitSpan[0]) / 0.5)) + 1, stop=True)
+		# WHETHER THE KERNER WRITES GROUPS IS ASKED IN THE KERNER, beside
+		# the other thing that decides what a run puts in the font. This
+		# window is what a bubble is; that one is what to do with them.
+		w.kernLine = vanilla.VerticalLine((midline, 360, 1, 28))
+		w.followSpacingBox = vanilla.CheckBox((right, 366, 320, 18), 'Bubbles follow sidebearing changes',
+			value=bool(auto._pref(auto.PREF_FOLLOW_SPACING, True)), callback=self.applySettings,
+			sizeStyle='small')
+
+	@objc.python_method
+	def settingValues(self, font=None, master=None):
+		"""What the controls should show. -> {key: float}
+
+		The file's settings over the app's, the same chain the generator
+		reads, so the panel cannot show one thing and write another.
+		"""
+		if font is None:
+			font = Glyphs.font
+		if master is None and font is not None:
+			master = font.selectedFontMaster
+		stored = auto.stored_settings(font, master)
+
+		def value(key, fallback, span):
+			raw = stored.get(key)
+			if raw is None:
+				raw = auto._pref(auto.SETTING_PREFS[key], None)
+			return auto._amount(raw, fallback, span)
+
+		grid = stored.get('grid')
+		if grid is None:
+			grid = auto._number(auto._pref(auto.PREF_GRID_Y, 0), 0) \
+				if auto._pref(auto.PREF_GRID_ON, False) else 0
+		grid = max(0.0, float(grid or 0))
+		return {
+			'bend': value('bend', auto.WALL_ANGLE, auto.ANGLE_RANGE),
+			'depth': value('depth', auto.MAX_INSET_PERCENT, auto.INSET_RANGE),
+			'amplitude': value('amplitude', 100.0, auto.AMPLITUDE_RANGE),
+			'fit': value('fit', 0.0, auto.FIT_RANGE),
+			'grid': grid,
+			# What the FIELD shows when the box is unticked: the number the
+			# person last used, so ticking it back on gives them their grid.
+			'gridY': grid or max(0.0, auto._number(auto._pref(auto.PREF_GRID_Y, 0), 0)),
+		}
+
+	@objc.python_method
+	def currentValues(self):
+		"""What the controls say. -> {key: float}, ready for any level."""
+		w = self.setW
+		return {
+			'bend': round(w.bend.get()),
+			'depth': round(w.depth.get()),
+			'amplitude': round(w.amplitude.get()),
+			'fit': round(w.fit.get(), 2),
+			'grid': max(0, int(auto._number(w.gridY.get(), 0))) if w.on.get() else 0,
+		}
+
+	@objc.python_method
+	def settingsKey(self):  # WHICH FONT AND MASTER THE PANEL IS SHOWING
+		font = Glyphs.font
+		if font is None:
+			return None
+		master = font.selectedFontMaster
+		return (id(font), master.id if master is not None else None)
+
+	@objc.python_method
+	def loadSettings(self):
+		"""Put whatever is in force in front of the person, popup and all."""
+		try:
+			w = self.setW
+			font = Glyphs.font
+			master = font.selectedFontMaster if font is not None else None
+			values = self.settingValues(font, master)
+			for key, label, span, form in auto.SETTING_UI:
+				getattr(w, key).set(values[key])
+			w.on.set(values['grid'] > 0)
+			w.gridY.set(str(int(values['gridY'])))
+			self.loadedFrom = self.settingsKey()
+			self.updateReadouts()
+			self.updateControls()
+			self.refreshPreview()
+		except Exception:
+			log(f'loadSettings error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def settingsInterfaceUpdate(self, sender=None):
+		# SWITCH FONT OR MASTER AND THE PANEL FOLLOWS. Only when it actually
+		# changed: this fires on every interface update, and reloading mid-drag
+		# would fight the hand on the slider.
+		try:
+			if getattr(self, 'setW', None) is None:
+				return
+			if self.settingsKey() != getattr(self, 'loadedFrom', None):
+				self.loadSettings()
+		except Exception:
+			log(f'settingsInterfaceUpdate error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def actionMenu(self, sender=None):
+		"""Drop the ellipsis button's menu under it.
+
+		Everything font-wide lives here: the two commands that change the whole
+		master and the one that hands the settings to another file. Each is done
+		once a session.
+		"""
+		try:
+			button = self.setW.copyButton.getNSButton()
+			menu = NSMenu.alloc().init()
+			# A REAL SELECTOR, not a Python callable: an NSMenuItem sends its
+			# action through the responder chain, and a bound method is not
+			# something the chain can send.
+			for title, action in (
+					('Set Refer Glyphs automatically…', 'autoGroupFont:'),
+					('Set Bubble Settings based on Kerning…', 'fitFromKerning:'),
+					(None, None),
+					('Copy Filter Parameter', 'copyFilterParameter:')):
+				if title is None:
+					menu.addItem_(NSMenuItem.separatorItem())
+					continue
+				item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+					title, action, '')
+				item.setTarget_(self)
+				menu.addItem_(item)
+			menu.popUpMenuPositioningItem_atLocation_inView_(
+				None, NSPoint(0, button.frame().size.height + 2), button)
+		except Exception:
+			log(f'actionMenu error: {traceback.format_exc()}', error=True)
+
+	def fitFromKerning_(self, sender):
+		self.openFitTextWindow()
+
+	def copyFilterParameter_(self, sender):
+		self.copyParameter(sender)
+
 	# --- WHICH PAIRS TO MATCH ---
+
+	@objc.python_method
+	def openFitTextWindow(self, sender=None):
+		"""Ask for the string before searching, on a sheet over the panel.
+
+		The search is only as good as the pairs it is given, and the pairs it is
+		given are whatever this string spells.
+		"""
+		try:
+			parent = getattr(self, 'setW', None)
+			if parent is None:
+				return
+			self.fitW = vanilla.Sheet((380, 132), parent)
+			w = self.fitW
+			w.info = vanilla.TextBox((15, 14, -15, 30),
+				'The settings are fitted to pairs this master already kerns. '
+				'Type a string that contains the ones to match:', sizeStyle='small')
+			w.text = vanilla.EditText((15, 56, -15, 21),
+				auto._pref(auto.PREF_FIT_TEXT, None) or FIT_TEXT,
+				placeholder=FIT_TEXT, sizeStyle='small')
+			w.cancel = vanilla.Button((-185, 94, 80, 20), 'Cancel',
+				callback=self.closeFitTextWindow, sizeStyle='small')
+			w.apply = vanilla.Button((-95, 94, 80, 20), 'Search',
+				callback=self.applyFitText, sizeStyle='small')
+			w.setDefaultButton(w.apply)
+			w.open()
+		except Exception:
+			log(f'openFitTextWindow error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def closeFitTextWindow(self, sender=None):
+		try:
+			self.fitW.close()
+		except Exception:
+			pass
+
+	@objc.python_method
+	def applyFitText(self, sender=None):
+		# THE SHEET GOES FIRST. The search reports what it found in an alert,
+		# and an alert put up over a sheet is an alert nobody can dismiss.
+		try:
+			Glyphs.defaults[auto.PREF_FIT_TEXT] = self.fitW.text.get() or FIT_TEXT
+		except Exception:
+			log(f'applyFitText error: {traceback.format_exc()}', error=True)
+		self.closeFitTextWindow()
+		self.fitSettings()
+
+	@objc.python_method
+	def copyParameter(self, sender=None):
+		"""Put the settings on the clipboard as a whole custom parameter.
+
+		What is on screen, whatever level it came from: a person copying this
+		is answering "what should this OTHER font do", and the answer is the
+		thing they are looking at.
+
+		The WHOLE parameter, not the value alone, so that pasting it into
+		Custom Parameters makes the row as well - and it still reads as the
+		value on its own if it is pasted into a text field instead.
+		"""
+		try:
+			text = auto.format_parameter(self.currentValues())
+			board = NSPasteboard.generalPasteboard()
+			board.clearContents()
+			board.setString_forType_(text, NSPasteboardTypeString)
+			Glyphs.showNotification('BubbleKern',
+				'Settings copied. Paste them into Custom Parameters in Font '
+				'Info, on the font or on a master.')
+		except Exception:
+			log(f'copyParameter error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def storePreferences(self, values):  # THE APP LEVEL, WHICH IS TEXT
+		Glyphs.defaults[auto.PREF_FIT] = str(values['fit'])
+		Glyphs.defaults[auto.PREF_WALL_ANGLE] = str(int(values['bend']))
+		Glyphs.defaults[auto.PREF_MAX_INSET] = str(int(values['depth']))
+		Glyphs.defaults[auto.PREF_AMPLITUDE] = str(int(values['amplitude']))
+		Glyphs.defaults[auto.PREF_GRID_ON] = bool(values['grid'])
+		if values['grid']:
+			Glyphs.defaults[auto.PREF_GRID_Y] = str(int(values['grid']))
+
+	@objc.python_method
+	def prefText(self, key):  # A STORED PREFERENCE AS A FIELD VALUE; '' IF UNSET
+		value = auto._pref(key, None)
+		if value is None or value == '':
+			return ''
+		try:
+			return str(int(float(value)))
+		except (TypeError, ValueError):
+			return ''
+
+	@objc.python_method
+	def applySettings(self, sender=None):
+		try:
+			w = self.setW
+			# THE SLIDERS WRITE WHERE THE SETTINGS ALREADY LIVE. A file
+			# carrying a parameter is edited by these sliders; a file carrying
+			# none leaves the preferences as the only home. Writing anywhere
+			# else would move a slider that the parameter then overrides, and
+			# the panel would be showing a number that is not in force.
+			font = Glyphs.font
+			master = font.selectedFontMaster if font is not None else None
+			source = auto.settings_source(font, master)
+			values = self.currentValues()
+			if source == 'master' and master is not None:
+				auto.store_settings(master, values)
+			elif source == 'font' and font is not None:
+				auto.store_settings(font, values)
+			else:
+				self.storePreferences(values)
+			Glyphs.defaults[auto.PREF_FOLLOW_SPACING] = bool(w.followSpacingBox.get())
+			self.updateReadouts()
+			self.updateControls()
+			self.refreshPreview()
+		except Exception:
+			log(f'applySettings error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def updateControls(self):
+		# A control for a question that is not being asked: the grid fields
+		# when there is no grid.
+		try:
+			w = self.setW
+			showGrid = bool(w.on.get())
+			for control in (w.yLabel, w.gridY):
+				control.show(showGrid)
+		except Exception:
+			log(f'updateControls error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def updateReadouts(self):
+		# THE NUMBER, NOTHING ELSE. A slider has none of its own, and what the
+		# number means is on the label at the other end of the row.
+		try:
+			w = self.setW
+			for key, label, span, form in auto.SETTING_UI:
+				getattr(w, key + 'Value').set(form % getattr(w, key).get())
+		except Exception:
+			log(f'updateReadouts error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def applyPreviewSize(self, sender=None):
+		# THE ONLY SETTING HERE THAT CHANGES NOTHING BUT THE LOOKING: it moves
+		# no wall and writes no kern, so it goes straight to the preferences
+		# and redraws, without going near a parameter.
+		try:
+			value = sender.get() if sender is not None else 100.0
+			Glyphs.defaults[auto.PREF_PREVIEW_SIZE] = str(int(round(value)))
+			self.refreshPreview()
+		except Exception:
+			log(f'applyPreviewSize error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def applyPreviewText(self, sender=None):
+		try:
+			Glyphs.defaults[auto.PREF_PREVIEW_TEXT] = sender.get() if sender is not None else ''
+			self.refreshPreview()
+		except Exception:
+			log(f'applyPreviewText error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def refreshPreview(self):
+		view = getattr(self, 'previewView', None)
+		if view is not None:
+			view.setNeedsDisplay_(True)
+
+	@objc.python_method
+	def previewMenu(self, sender=None):
+		"""Drop the eye button's menu, with a tick against whatever is shown.
+
+		Built fresh on every click rather than kept, so the ticks are read off
+		the preferences at the moment the menu opens and cannot fall out of step
+		with them.
+		"""
+		try:
+			button = self.setW.previewBox.previewGear.getNSButton()
+			menu = NSMenu.alloc().init()
+			# A REAL SELECTOR, not a Python callable: an NSMenuItem sends its
+			# action through the responder chain, and a bound method is not
+			# something the chain can send.
+			for title, action, key in (
+					('Show Bubbles', 'togglePreviewWalls:', auto.PREF_PREVIEW_WALLS),
+					('Preview Kerning', 'togglePreviewKerned:', auto.PREF_PREVIEW_KERNED)):
+				item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+					title, action, '')
+				item.setTarget_(self)
+				item.setState_(1 if bool(auto._pref(key, True)) else 0)
+				menu.addItem_(item)
+			menu.popUpMenuPositioningItem_atLocation_inView_(
+				None, NSPoint(0, button.frame().size.height + 2), button)
+		except Exception:
+			log(f'previewMenu error: {traceback.format_exc()}', error=True)
+
+	def togglePreviewWalls_(self, sender):
+		self.flipPreview(auto.PREF_PREVIEW_WALLS)
+
+	def togglePreviewKerned_(self, sender):
+		self.flipPreview(auto.PREF_PREVIEW_KERNED)
+
+	@objc.python_method
+	def flipPreview(self, key):
+		# NOT NOW, ONE TURN OF THE RUN LOOP LATER. This runs while AppKit is
+		# still taking the menu down, and redrawing from inside that is the
+		# deadlock every other menu item here is deferred to avoid.
+		def run():
+			try:
+				Glyphs.defaults[key] = not bool(auto._pref(key, True))
+				box = self.setW.previewBox
+				setPreviewGear(box.previewGear,
+					bool(auto._pref(auto.PREF_PREVIEW_WALLS, True))
+					or bool(auto._pref(auto.PREF_PREVIEW_KERNED, True)))
+				self.refreshPreview()
+				Glyphs.redraw()
+			except Exception:
+				log(f'flipPreview error: {traceback.format_exc()}', error=True)
+		NSOperationQueue.mainQueue().addOperationWithBlock_(run)
+
+	@objc.python_method
+	def closeSettingsWindow(self, sender=None):
+		# THE WINDOW IS ALREADY CLOSING when this runs: save what the sliders
+		# say and let go of the preview view, nothing more.
+		try:
+			self.applySettings()
+		except Exception:
+			pass
+		try:
+			Glyphs.removeCallback(self.settingsInterfaceUpdate, UPDATEINTERFACE)
+		except Exception:
+			pass
+		self.previewView = None
+		self.setW = None
 
 	@objc.python_method
 	def __file__(self):
