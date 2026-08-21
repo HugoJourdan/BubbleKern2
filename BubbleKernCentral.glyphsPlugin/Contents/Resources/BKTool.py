@@ -254,10 +254,303 @@ class BubbleKernTool(SelectTool):
 		# / USER INTERFACE
 
 	@objc.python_method
+	def buildInfoSection(self):
+		"""The two slabs: a reference field and a generate button a side."""
+		# TWO SLABS, NOT ONE BOX WITH A LINE DOWN IT: each striped in the colour
+		# the canvas draws that wall in.
+		self.w.group = vanilla.Group("auto")
+		# BEFORE THE CONTROLS, so the controls land in front of them: vanilla
+		# adds subviews in the order the attributes are set.
+		self.w.group.boxL = PillGroup("auto")
+		self.w.group.boxR = PillGroup("auto")
+		self.w.group.boxL.getNSView().isLeftSide = True
+		self.w.group.boxR.getNSView().isLeftSide = False
+		self.w.group.glyphNameL = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
+		self.w.group.glyphNameR = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
+		f0 = self.w.group.glyphNameL.getNSTextField()
+		f1 = self.w.group.glyphNameR.getNSTextField()
+		for field in (f0, f1):
+			field.setToolTip_('A glyph to take this side from, %s for the '
+				'other side of this glyph, or %s to have this side drawn from '
+				'the outline and redrawn whenever it moves'
+				% (MIRROR_TOKEN, AUTO_TOKEN))
+		f0.setNextKeyView_(f1)
+		f1.setNextKeyView_(f0)
+		# ONE BUTTON, ONE COMMAND. The menu behind these held two items and
+		# then one; a menu whose whole content is the thing you came for is a
+		# click spent asking. Decompose moved to the canvas's own menu, where
+		# it can appear only on a side that has something to decompose.
+		#
+		# NOT DEFERRED, unlike the menu items this replaces: a button's action
+		# comes from an ordinary click, with no tracking session still winding
+		# up behind it.
+		for name, isLeft in (('menusL', True), ('menusR', False)):
+			button = vanilla.SquareButton('auto', '',
+				callback=(lambda sender, side=isLeft: self.autoGenerate(side)),
+				sizeStyle='small')
+			setattr(self.w.group, name, button)
+			native = button.getNSButton()
+			native.setToolTip_('Auto-generate this side\u2019s bubble')
+			# NO BEZEL. The slab it sits on is already a shape with an edge, and
+			# a second edge inside it reads as a box in a box. The symbol alone
+			# is the whole button, so it borrows the slab's ground.
+			native.setBordered_(False)
+			image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+				'arrow.counterclockwise', 'Auto-generate')
+			if image is not None:
+				native.setImage_(image)
+		rules = (
+			# The two slabs split the width evenly, and the run of controls is
+			# symmetrical about the gap between them, so each slab ends up
+			# exactly around the three things that belong to its side.
+			'H:|[boxL(boxR)]-(gap)-[boxR]|',
+			# A FLOOR UNDER THE WIDTH, at a priority below required so a window
+			# with no room for it bends the rule instead of breaking.
+			# MIRRORED, NOT REPEATED. The left slab runs button-then-field and
+			# the right one field-then-button, so each button sits against its
+			# own slab's pointed edge and the two fields meet in the middle.
+			'H:|-(edgeL)-[menusL(button)]-(spL)-[glyphNameL(glyphNameR,>=100@750)]'
+			'-(between)-[glyphNameR]-(sp)-[menusR(button)]-(edge)-|',
+			'V:|[boxL]|',
+			'V:|[boxR]|',
+			'V:|-(pad)-[glyphNameL(row)]-(pad)-|',
+			# A POINT LOWER THAN THE FIELDS. The symbol's ink sits high in its
+			# box, so a button squared up with the fields reads as riding above
+			# them; `drop` and `rise` are `pad` moved one point down.
+			'V:|-(drop)-[menusL(row)]-(rise)-|',
+			'V:|-(pad)-[glyphNameR(row)]-(pad)-|',
+			'V:|-(drop)-[menusR(row)]-(rise)-|',
+		)
+		# `edge` is the outer margin, the tag's point plus the slab's own margin;
+		# `between` is one slab's margin, the gap, and the other's, so the two
+		# refresh buttons sit the same distance from their slab's edge. The gap
+		# between the slabs is the gap under them, so the section reads as one
+		# thing with the info box.
+		#
+		# NOT QUITE A MIRROR: `edgeL` sets the left button a point further out
+		# than the right one's reflection would, which is what the pair looks
+		# level at. The point comes off its outer gap and goes straight back
+		# into `spL`, the gap on its other side. See CLAUDE.md.
+		metrics = {'pad': 6, 'drop': 7, 'rise': 5, 'sp': 2, 'spL': 3,
+				'edge': PILL_POINT + BUTTON_MARGIN,
+				'edgeL': PILL_POINT + BUTTON_MARGIN - 1, 'gap': INFO_BOX_GAP,
+				'between': INFO_BOX_GAP + 2 * SLAB_MARGIN,
+				'button': 20, 'row': 22}
+		self.w.group.addAutoPosSizeRules(rules, metrics)
+
+	@objc.python_method
+	def buildCoordsSlab(self):
+		"""The X and Y of the selected node, in its own slab."""
+		# THE SELECTED NODE'S COORDINATES, IN A STRIP OF ITS OWN. Glyphs' own X
+		# and Y box only ever shows a GSNode, and a bubble node is not ink and
+		# must never become ink to get a box, so it cannot appear there however
+		# node-like it is made. See CLAUDE.md.
+		#
+		# ABOVE THE ROW, NOT IN IT: that row is two slabs symmetrical about the
+		# middle of the box below, and a third thing on one end of it would say
+		# the middle was somewhere else.
+		# X OVER Y, LABEL THEN NUMBER, the way Glyphs stacks the same two
+		# numbers - and in its own slab, in the place it puts it: hard against
+		# the right of the info box, standing on the same line.
+		self.w.coords = InspectorGroup('auto')
+		# THE SIZE THE REST OF THE BAR IS SET IN. `small` is 11pt against the
+		# 13 of every number beside it, and a readout that has to be leaned
+		# into to read is worse than no readout in a box this size.
+		self.w.coords.xLabel = vanilla.TextBox('auto', 'X', alignment='right')
+		self.w.coords.x = vanilla.EditText('auto', '', callback=self.coordEdited)
+		self.w.coords.yLabel = vanilla.TextBox('auto', 'Y', alignment='right')
+		self.w.coords.y = vanilla.EditText('auto', '', callback=self.coordEdited)
+		# NO BOX ROUND THE NUMBERS. The slab is the edge; Glyphs' own fields
+		# draw none until they are being typed in.
+		for control in (self.w.coords.x, self.w.coords.y):
+			native = control.getNSTextField()
+			native.setBordered_(False)
+			native.setDrawsBackground_(False)
+			native.setFocusRingType_(NSFocusRingTypeNone)
+			# MONOSPACED, LIKE THE CARD AGAINST THE NODE: proportional digits
+			# move the whole number under itself as a node passes through -9,
+			# -10, -100. The label beside it is a word and stays in the face
+			# the rest of the bar is set in.
+			native.setFont_(NSFont.monospacedSystemFontOfSize_weight_(
+				NSFont.systemFontSize(), 0.0))
+		for control in (self.w.coords.xLabel, self.w.coords.yLabel):
+			control.getNSTextField().setTextColor_(NSColor.secondaryLabelColor())
+		self.w.coords.addAutoPosSizeRules((
+			'H:|-(edge)-[xLabel(label)]-(sp)-[x(field)]-(right)-|',
+			'H:|-(edge)-[yLabel(label)]-(sp)-[y(field)]-(right)-|',
+			'V:|-(top)-[xLabel(row)]-(gap)-[yLabel(row)]-(pad)-|',
+			'V:|-(top)-[x(row)]-(gap)-[y(row)]-(pad)-|',
+			# GLYPHS' OWN X AND Y BOX, MEASURED IN THE RUNNING APP: a slab 78 by
+			# 46, labels 13 wide standing at x 8, and fields 53 wide at x 21,
+			# both rows 17 tall at y 3 and y 24. Four short of the frames they
+			# make, because vanilla lays out the ALIGNMENT rect and a text
+			# field's frame stands two points past it a side. See CLAUDE.md.
+		), {'edge': 10, 'sp': 4, 'top': 5, 'gap': 4, 'pad': 3, 'right': 6,
+			'label': 9, 'field': 49, 'row': 17})
+
+	@objc.python_method
+	def applyInfoBarAppearance(self):
+		"""Hide the coordinate slab and light both, whatever the theme."""
+		self.coordsView = self.w.coords.getNSView()
+		self.coordsView.setHidden_(True)
+		self.infoBoxView = self.w.group.getNSView()
+		# LIGHT, WHATEVER THE THEME. Glyphs' own info box is a light grey slab
+		# in dark mode too, and these sit beside it: left to inherit the
+		# canvas's dark appearance the fields would come out dark on light.
+		aqua = NSAppearance.appearanceNamed_('NSAppearanceNameAqua')
+		if aqua is not None:
+			self.infoBoxView.setAppearance_(aqua)
+			self.coordsView.setAppearance_(aqua)
+
+	@objc.python_method
 	def start(self):  # WHEN GLYPHSAPP STARTS
 		pass
 
 	# @objc.python_method
+	@objc.python_method
+	def infoBoxDecoy(self):
+		"""The empty view Glyphs is given instead of the real section.
+
+		Made once and kept: it is the thing Glyphs owns, moves and re-adds, and
+		it is hidden, so NSStackView leaves it out of the bar's layout
+		altogether. It also says where the bar IS, which is the only thing this
+		tool still needs from it.
+		"""
+		anchor = getattr(self, 'infoBoxAnchor', None)
+		if anchor is None:
+			anchor = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, 0, 0))
+			anchor.setHidden_(True)
+			self.infoBoxAnchor = anchor
+		return anchor
+
+	@objc.python_method
+	def infoBoxContainer(self):
+		"""Glyphs' own info box, found through the decoy sitting beside it."""
+		stack = self.infoBoxDecoy().superview()
+		if not isinstance(stack, NSStackView):
+			return None
+		for sub in (stack.arrangedSubviews() or []):
+			if 'GSInfoViewContainer' in sub.__class__.__name__:
+				return sub
+		return None
+
+	@objc.python_method
+	def placeInfoBox(self):
+		"""Park the section above the info box and leave it there.
+
+		Glyphs rebuilds the info bar's stack about 150ms after the interface
+		update that caused it, so anything moved out of that stack is moved
+		back. Glyphs is given a decoy to own and the real section is parented
+		once, straight into the canvas, held above the info box by two
+		constraints. See CLAUDE.md.
+
+		Cheap enough for `view`, which is called constantly: two identity
+		checks when it is already where it belongs.
+		"""
+		try:
+			view = getattr(self, 'infoBoxView', None)
+			if view is None:
+				return
+			box = self.infoBoxContainer()
+			if box is None:
+				return  # the bar is not up yet; the next call will find it
+			host = box.superview()
+			while host is not None and isinstance(host, NSStackView):
+				host = host.superview()
+			if host is None:
+				return
+			if (view.superview() is host
+					and getattr(self, 'infoBoxAnchoredTo', None) is box):
+				return
+			# A NEW INFO BOX MEANS NEW CONSTRAINTS. Glyphs builds a fresh
+			# container when it rebuilds the bar, and constraints against the
+			# old one are dead the moment it goes.
+			self.dropInfoBoxRules()
+			view.removeFromSuperview()
+			host.addSubview_(view)
+			view.setTranslatesAutoresizingMaskIntoConstraints_(False)
+			# CENTRED ON THE BOX BELOW, not lined up with its left edge: the
+			# two are different widths, and a shared middle reads as "these
+			# belong together" where a shared left edge reads as a column one
+			# of them has fallen out of.
+			rules = (
+				view.centerXAnchor().constraintEqualToAnchor_(
+					box.centerXAnchor()),
+				view.bottomAnchor().constraintEqualToAnchor_constant_(
+					box.topAnchor(), -INFO_BOX_GAP),
+			)
+			coords = getattr(self, 'coordsView', None)
+			if coords is not None:
+				# ONE STOREY UP, on the same middle as everything else here.
+				coords.removeFromSuperview()
+				host.addSubview_(coords)
+				coords.setTranslatesAutoresizingMaskIntoConstraints_(False)
+				# BESIDE THE BOX, NOT OVER IT: the spot Glyphs shows a node's own
+				# X and Y in, which is free here because the tool keeps the outline
+				# out of its selection and so no node of Glyphs' own is ever in it.
+				# HARD AGAINST IT, WITH NO GAP AT ALL: the info bar's stack is
+				# spaced zero, so the two slabs meet.
+				rules = rules + (
+					coords.leadingAnchor().constraintEqualToAnchor_(
+						box.trailingAnchor()),
+					coords.bottomAnchor().constraintEqualToAnchor_(
+						box.bottomAnchor()),
+				)
+			for rule in rules:
+				rule.setActive_(True)
+			self.infoBoxRules = rules
+			self.infoBoxAnchoredTo = box
+		except Exception:
+			log(f'placeInfoBox error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def placeInfoBoxSoon(self, tries=15):
+		"""Keep asking until the bar is up.
+
+		`view` is asked for the section BEFORE the decoy is in the stack, so the
+		first attempt has nothing to anchor to and gives up. See CLAUDE.md.
+
+		Bounded, and it stops the moment it lands - about a second of asking at
+		the outside, and none of it if the first attempt works.
+		"""
+		try:
+			self.placeInfoBox()
+			if getattr(self, 'infoBoxAnchoredTo', None) is not None or tries <= 0:
+				return
+
+			def again(timer):
+				# NOT AFTER THE TOOL HAS GONE, or a tool nobody is using puts
+				# its section back on somebody else's canvas.
+				if getattr(self, 'infoBoxLive', False):
+					self.placeInfoBoxSoon(tries - 1)
+
+			NSTimer.scheduledTimerWithTimeInterval_repeats_block_(0.08, False, again)
+		except Exception:
+			log(f'placeInfoBoxSoon error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def hideInfoBox(self):
+		"""Take the section off the canvas, which deactivate does."""
+		try:
+			self.infoBoxLive = False
+			self.dropInfoBoxRules()
+			self.infoBoxAnchoredTo = None
+			for name in ('infoBoxView', 'coordsView'):
+				view = getattr(self, name, None)
+				if view is not None:
+					view.removeFromSuperview()
+		except Exception:
+			log(f'hideInfoBox error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def dropInfoBoxRules(self):
+		"""Let go of the two constraints, if any are still held."""
+		for rule in (getattr(self, 'infoBoxRules', None) or ()):
+			try:
+				rule.setActive_(False)
+			except Exception:
+				pass
+		self.infoBoxRules = None
 
 	def activate(self):  # When the tool is activated, updateUI and set activeLayer
 		try:
@@ -340,6 +633,17 @@ class BubbleKernTool(SelectTool):
 			return True
 
 	@objc.python_method
+	def infoBox(self, sender):  # Called if Info Box UI elements are edited
+		try:
+			if self.setActiveLayer() is False:
+				return
+			self.saveInfoToLayer(self.activeLayer)
+			self._updateReferenceFieldColors(self.activeLayer)
+			Glyphs.redraw()
+		except Exception:
+			log(f'infoBox error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
 	def updateUI(self, theEvent = None):  # Fill UI fields from userData after Interface change
 		try:
 			self.placeInfoBox()
@@ -377,6 +681,55 @@ class BubbleKernTool(SelectTool):
 		# real section is parked on the canvas instead, where nothing moves it.
 		self.placeInfoBox()
 		return self.infoBoxDecoy()
+
+	@objc.python_method
+	def _updateReferenceFieldColors(self, layer):  # COLORS REFERENCE FIELDS RED IF REFERENCE IS INVALID
+		if layer is None:
+			return
+		for side, field in zip(SIDES, (self.w.group.glyphNameL, self.w.group.glyphNameR)):
+			gName = layer.userData.get(side.key('Refer')) or None
+			tf = field.getNSTextField()
+			if gName and not isReferenceValid(layer, side):
+				tf.setTextColor_(NSColor.systemRedColor())
+			else:
+				tf.setTextColor_(NSColor.textColor())
+
+	@objc.python_method
+	def saveInfoToLayer(self, layer):  # CALLED AFTER UI CHANGE. SAVES THE REFERENCE FIELDS TO LAYER USERDATA
+		try:
+			if layer is None or layer.name is None:
+				return
+
+			# SAVE INTERFACE'S GLYPH NAMES FOR L AND R
+			for side, value in zip(SIDES, (self.w.group.glyphNameL.get(), self.w.group.glyphNameR.get())):
+				if isinstance(value, str):
+					value = value.strip()
+				if not value:
+					value = None
+				if value == MIRROR_TOKEN:
+					# THE OTHER SIDE OF THIS GLYPH, spelled the way Glyphs'
+					# metric keys spell it. Everything a mirror needs undoing
+					# or clearing is in syncBubble already.
+					self.syncBubble(side.isLeft, layers=[layer])
+					continue
+				if isinstance(value, str) and value.lower() == AUTO_TOKEN:
+					self.setAuto(side.isLeft, layer)
+					continue
+				# ANYTHING ELSE TYPED TAKES THE SIDE OFF AUTOMATIC, including
+				# emptying the field: what is drawn now stays drawn.
+				for stale in (side.key('Auto'), side.key('Mirror')):
+					if layer.userData[stale]:
+						del layer.userData[stale]
+				if layer.userData[side.key('Refer')] is not value:
+					# IF USERDATA AND UI FIELD DISAGREE, DELETE TEMP DATA
+					del layer.tempData[TempDataBubblesKey]
+
+				if value:  # SAVE
+					layer.userData[side.key('Refer')] = value
+				else:  # REMOVE REFERENCE IF UI IS EMPTY
+					del layer.userData[side.key('Refer')]
+		except Exception:
+			log(f'saveInfoToLayer error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def saveNodesToLayer(self, layer):  # SAVES NODES FROM TEMPDATA TO USERDATA.
@@ -957,6 +1310,17 @@ class BubbleKernTool(SelectTool):
 			return None, False
 
 	@objc.python_method
+	def storedCoordinates(self, layer, node, isRight):
+		"""A node's position as the file writes it down. -> (x, y)
+
+		The same two numbers the card on the canvas shows: upright, and a right
+		wall measured back from its own advance.
+		"""
+		m = layer.master
+		x = tempToUserNodeX(node.x, node.y, m.italicAngle, m.xHeight)
+		return (x - layer.width if isRight else x), node.y
+
+	@objc.python_method
 	def moveBubbleNodeTo(self, layer, node, isRight, x, y):
 		"""Put a node where the strip says it should be. -> True if it moved
 
@@ -984,6 +1348,44 @@ class BubbleKernTool(SelectTool):
 		except Exception:
 			log(f'moveBubbleNodeTo error: {traceback.format_exc()}', error=True)
 			return False
+
+	@objc.python_method
+	def showCoordinates(self, layer):
+		"""Fill the strip in, or take it away. -> None"""
+		try:
+			view = getattr(self, 'coordsView', None)
+			if view is None:
+				return
+			node, isRight = self.selectedBubbleNode(layer)
+			if node is None:
+				view.setHidden_(True)
+				return
+			x, y = self.storedCoordinates(layer, node, isRight)
+			self.w.coords.x.set(str(int(round(x))))
+			self.w.coords.y.set(str(int(round(y))))
+			view.setHidden_(False)
+			view.setNeedsDisplay_(True)
+		except Exception:
+			log(f'showCoordinates error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def coordEdited(self, sender=None):
+		try:
+			if self.setActiveLayer() is False:
+				return
+			layer = self.activeLayer
+			node, isRight = self.selectedBubbleNode(layer)
+			if node is None:
+				return
+			was = self.storedCoordinates(layer, node, isRight)
+			x = auto._number(str(self.w.coords.x.get()).strip(), was[0])
+			y = auto._number(str(self.w.coords.y.get()).strip(), was[1])
+			if self.moveBubbleNodeTo(layer, node, isRight, x, y):
+				store.applyPreviewKerning()
+			self.showCoordinates(layer)
+			Glyphs.redraw()
+		except Exception:
+			log(f'coordEdited error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def keepOnlyBubbleNodes(self, layer):
