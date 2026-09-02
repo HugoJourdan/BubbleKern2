@@ -7,3 +7,6 @@ __pycache__
 CLAUDE.md
 docs/
 archive/
+
+# Finder leaves these everywhere; they are not source.
+.DS_Store

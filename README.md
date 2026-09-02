@@ -29,11 +29,12 @@ It’s a work in progress and purposefully unavailable on Plugin Manager for now
 - PolyKern parameter: the settings are stored per font or per master as a custom parameter, with its own editor in Font Info.
 - Set Bubble Settings based on Kerning: solves for the gap that best reproduces the kerning already in the font, so an existing family can be matched rather than respaced.
 - Grid: bubble nodes can snap to an optional grid, drawn in the edit view.
+- Overwrite confirmation: generating over a selection says how many sides already hold work — drawn by hand, borrowed from another glyph or mirrored from the other side — and offers to generate only the empty ones instead. Sides set to `auto` are never counted: they asked to be kept up to date.
 - Stale bubbles: a bubble is flagged when the outline has moved under it, and follows a sidebearing change on its own.
 - Info section: each side’s reference field and auto-generate button, and the selected node’s X and Y, sit beside GlyphsApp’s own info box.
 - Live kerning: the kern value against the neighbours is shown, and kept up to date, while a bubble node is dragged.
 - Kerning groups: the Kerner can write groups rather than flat pairs, and can be narrowed to the pairs that actually occur in text.
-- Tests: 158 tests covering the parts that are pure Python, run without GlyphsApp.
+- Tests: 177 tests covering the parts that are pure Python, run without GlyphsApp.
 
 ## Test files
 In the *Demo files* folder:

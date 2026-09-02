@@ -122,6 +122,40 @@ def snapStored(nodes, side, grid):  # SNAP A LIST OF STORED (x, y)
 	return flipped(auto.snap_points(flipped(nodes), grid))
 
 
+def holdsWork(layer, side):
+	"""True when this side carries something a generate run would destroy.
+
+	NOT EVERYTHING PRESENT IS WORK. A side set to `auto` asked to be kept up to
+	date, so regenerating it is the thing it is for; and the blank line on the
+	origin is what a layer carries when nobody has drawn it anything. Neither
+	is a decision anyone would miss.
+
+	A wall drawn by hand, one borrowed from another glyph and one mirrored from
+	the other side all are, and a run writes over all three without a word -
+	`writeBubble` clears the reference and the mirror flag as it goes.
+	"""
+	try:
+		if layer.userData[side.key('Refer')]:
+			return True
+		if isMirrored(layer, side.isLeft):
+			return True
+		if layer.userData[side.key('Auto')]:
+			return False
+		nodes = layer.userData[side.key('Nodes')]
+		return bool(nodes) and not isBlankWall(nodes)
+	except Exception:
+		log(f'holdsWork error: {traceback.format_exc()}', error=True)
+		return False
+
+
+def countExisting(layers, sides=SIDES):
+	"""How many sides among these layers a run would overwrite. -> int
+
+	Both sides by default, because a run does both.
+	"""
+	return sum(1 for layer in layers for side in sides if holdsWork(layer, side))
+
+
 def mergeFromComponents(layer, side):
 	"""Leave a composite to its components instead of drawing it a wall.
 
@@ -377,11 +411,14 @@ def chosenLayers(font, layers=None):
 		if isinstance(layer, GSLayer) and layer.name is not None]
 
 
-def autoGenerate(font, isLeft, layers=None):
+def autoGenerate(font, isLeft, layers=None, skipExisting=False):
 	"""Draw one side of every given layer. -> (drawn, merged, skipped)
 
 	A composite is LEFT TO ITS COMPONENTS where it can be - `mergeFromComponents`
 	says so - and only measured where it cannot.
+
+	`skipExisting` leaves alone every side that already holds work, which is
+	what the menu offers when it finds any. Those count as skipped.
 	"""
 	side = auto.LEFT if isLeft else auto.RIGHT
 	done = skipped = merged = 0
@@ -401,6 +438,9 @@ def autoGenerate(font, isLeft, layers=None):
 		return cache[key]
 
 	for layer in chosenLayers(font, layers):
+		if skipExisting and holdsWork(layer, side):
+			skipped += 1
+			continue
 		if mergeFromComponents(layer, side):
 			merged += 1
 			continue

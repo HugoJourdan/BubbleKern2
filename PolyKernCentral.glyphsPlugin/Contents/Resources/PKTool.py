@@ -37,8 +37,10 @@ from Cocoa import (
 	NSImageOnly,  # the gear is the whole of both menu buttons
 )
 
+import os  # to find the toolbar icon beside this file
 from Foundation import NSTimer  # to keep asking for the info box until the bar is up
 from Foundation import NSOperationQueue  # to print after the menu has let go
+from Foundation import NSMakeSize  # to size the toolbar icon
 
 from typing import Self
 
@@ -228,6 +230,41 @@ bubbleDrawingIsActive = False  # True if I want to draw all the time
 class PolyKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
 
+	# THE ICON IS 18 POINTS TALL WHATEVER THE ARTWORK IS. Every toolbar icon
+	# in Glyphs is drawn at about that; the PDF is 56x81, and left at its own
+	# size it would tower over the rest of the bar.
+	TOOLBAR_ICON = 'PolyKernIcon.pdf'
+	TOOLBAR_ICON_HEIGHT = 18.0
+
+	@objc.python_method
+	def setToolbarIcon(self):
+		"""The tool's icon in the toolbar, tinted like every other one.
+
+		SET, NOT LEFT TO A FILENAME. Glyphs picks an icon up by convention from
+		`toolbar.pdf`, which is how this had one before, but that path cannot
+		size it and cannot make it a template - and the artwork is white, so
+		untinted it is invisible against a light toolbar.
+		"""
+		try:
+			path = os.path.join(os.path.dirname(self.__file__()), self.TOOLBAR_ICON)
+			icon = NSImage.alloc().initByReferencingFile_(path)
+			if icon is None or not icon.isValid():
+				return
+			size = icon.size()
+			if size.height:
+				scale = self.TOOLBAR_ICON_HEIGHT / size.height
+				icon.setSize_(NSMakeSize(size.width * scale, self.TOOLBAR_ICON_HEIGHT))
+			self._icon = None  # required before Glyphs 3.4 (3416)
+			self.tool_bar_image = icon
+			# Glyphs 4 only calls setTemplate_ when self._icon is truthy, and the
+			# line above deliberately sets it to None - so the icon would render
+			# as opaque artwork instead of tinting like every other toolbar item.
+			# initByReferencingFile_ does not honour the "...Template" filename
+			# convention either, so set it explicitly. Harmless on Glyphs 3.
+			self.tool_bar_image.setTemplate_(True)
+		except Exception:
+			log(f'setToolbarIcon error: {traceback.format_exc()}', error=True)
+
 	@objc.python_method
 	def settings(self):
 		global mainDrawingHandler
@@ -241,6 +278,7 @@ class PolyKernTool(SelectTool):
 		self.keyboardShortcutModifier = (NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption)
 		self.keyboardShortcut = 'b'
 		self.toolbarPosition = 20
+		self.setToolbarIcon()
 		self.horizontal = getattr(self, "horizontal", True)  # whether horizontal or vertical bubbles
 		self.closestNode = None  # for highlighting the addable node
 		self.closestNodeSide = None

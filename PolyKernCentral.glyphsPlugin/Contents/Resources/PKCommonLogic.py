@@ -108,6 +108,25 @@ def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askSt
 	elif response == 1001:  # Cancel
 		return False
 
+def ask_choice(message: str, secondMessage: str, buttons) -> int:
+	"""An alert whose answers are not two. -> index of the button pressed.
+
+	`show_alert` is the OK/Cancel case and answers with a bool. This one takes
+	the button titles in the order they should read, left to right, and the
+	FIRST IS THE DEFAULT - the one Return presses - so a question whose safe
+	answer is not the first has to say so by putting it there.
+	"""
+	alert = NSAlert.alloc().init()
+	alert.setMessageText_(message)
+	if secondMessage:
+		alert.setInformativeText_(secondMessage)
+	for title in buttons:
+		alert.addButtonWithTitle_(title)
+	# NSAlertFirstButtonReturn is 1000 and they run on from there in the order
+	# they were added.
+	return int(alert.runModal()) - 1000
+
+
 # called from PKTool when getting node position for display; converts tempData's node x to userData's node x for display and storage
 # also from buildBubble()
 def tempToUserNodeX(x, y, italicAngle, xHeight):

@@ -9,7 +9,7 @@ import subprocess # for revealing exported font in Finder
 import re  # for displaying font file name
 import time # for managing progress bar
 from typing import Optional, Any
-from Foundation import NSMutableDictionary #, NSLog
+from Foundation import NSMutableDictionary, NSOperationQueue #, NSLog
 
 from AppKit import (
 	NSMenu,  # for the PolyKern submenu
@@ -157,10 +157,43 @@ class PolyKernKerner(GeneralPlugin):
 			PKCommonLogic.log(f'openSettings error: {traceback.format_exc()}', error=True)
 
 	def generateSelected_(self, sender):
-		self.generateBubbles(False)
+		self.generateSoon(False)
 
 	def generateAllMasters_(self, sender):
-		self.generateBubbles(True)
+		self.generateSoon(True)
+
+	@objc.python_method
+	def generateSoon(self, allMasters):
+		# ONE TURN OF THE RUN LOOP LATER. The run can put an alert up now, and
+		# a modal window raised while AppKit is still taking the menu down is
+		# the deadlock this codebase keeps meeting. See `soon` in PKTool.
+		def run():
+			self.generateBubbles(allMasters)
+		NSOperationQueue.mainQueue().addOperationWithBlock_(run)
+
+	# WHAT THE QUESTION CAN COME BACK WITH.
+	OVERWRITE, KEEP, CANCEL = 'overwrite', 'keep', 'cancel'
+
+	@objc.python_method
+	def askAboutExisting(self, count):
+		"""Whether to write over the sides that already hold work. -> str
+
+		BUTTON ORDER IS THE MACOS ONE: the first added sits rightmost and is
+		what Return presses, and AppKit gives a button titled `Cancel` the
+		escape key by itself. So `Keep Them` is first - it is the answer that
+		loses nothing and still does the work asked for, which is what a Return
+		pressed without reading should do - and overwriting has to be aimed at.
+		"""
+		sides = 'side' if count == 1 else 'sides'
+		answer = PKCommonLogic.ask_choice(
+			f'Overwrite {count} PolyKern {sides}?',
+			f'{count} of the selected {sides} {"was" if count == 1 else "were"} '
+			'drawn by hand, borrowed from another glyph, or mirrored from the '
+			'other side. Generating writes over all three.\n\n'
+			'Keep Them generates only the sides that hold nothing. Sides set to '
+			'auto are not counted either way: they ask to be kept up to date.',
+			('Keep Them', f'Overwrite {sides.title()}', 'Cancel'))
+		return {0: self.KEEP, 1: self.OVERWRITE, 2: self.CANCEL}.get(answer, self.CANCEL)
 
 	@objc.python_method
 	def generateBubbles(self, allMasters):
@@ -182,12 +215,24 @@ class PolyKernKerner(GeneralPlugin):
 			layers = [layer for layer in layers if layer is not None and layer.name is not None]
 			if not layers:
 				return
+			# WHAT IS ALREADY THERE IS SOMEBODY'S WORK, and a run used to write
+			# over it without a word - including the references and mirrors,
+			# which `writeBubble` clears as it goes. Counted across both sides,
+			# because a run does both.
+			skipExisting = False
+			existing = PKBubbleStore.countExisting(layers)
+			if existing:
+				answer = self.askAboutExisting(existing)
+				if answer == self.CANCEL:
+					return
+				skipExisting = answer == self.KEEP
 			# THE STORE, NOT THE TOOL. Generating a bubble is writing userData
 			# on a layer and needs no canvas; going through the live tool meant
 			# this command failed outright when the tool had not been picked up
 			# yet. Only the redraw wants the tool, and only if there is one.
 			for isLeft in (True, False):
-				PKBubbleStore.autoGenerate(font, isLeft, layers=layers)
+				PKBubbleStore.autoGenerate(font, isLeft, layers=layers,
+					skipExisting=skipExisting)
 			if PKTool.mainDrawingHandler is not None:
 				PKTool.mainDrawingHandler.refreshAfterWrite()
 		except Exception:
