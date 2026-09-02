@@ -336,7 +336,7 @@ def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms
 				inner = unionSubpaths(inner, not isLeft)
 				inner = mirrorBubblePath(inner, theAttributes.layer)
 				for t in currentTransforms:
-					trans = NSAffineTransform()
+					trans = NSAffineTransform.transform()
 					trans.setTransformStruct_(t)
 					inner.transformUsingAffineTransform_(trans)
 				bubblePath.appendBezierPath_(inner)
@@ -387,7 +387,7 @@ def buildBubble(theAttributes, isLeft=True, bubblePath=None, inheritedTransforms
 			# leaves its argument alone, so discarding the return throws the move
 			# away. See CLAUDE.md.
 			for t in currentTransforms:
-				trans = NSAffineTransform()
+				trans = NSAffineTransform.transform()
 				trans.setTransformStruct_(t)
 				localPath.transformUsingAffineTransform_(trans)
 

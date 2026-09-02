@@ -383,15 +383,29 @@ def autoGenerate(font, isLeft, layers=None):
 	A composite is LEFT TO ITS COMPONENTS where it can be - `mergeFromComponents`
 	says so - and only measured where it cannot.
 	"""
-	master = font.selectedFontMaster
-	settings = auto.auto_settings(font, master)
-	grid = auto.resolve_grid(font, master)
 	side = auto.LEFT if isLeft else auto.RIGHT
 	done = skipped = merged = 0
+	cache = {}
+
+	def forMaster(master):
+		# SETTINGS FOLLOW THE LAYER'S OWN MASTER, NOT THE SELECTED ONE. The
+		# all-masters run hands in layers of every master at once, and
+		# `stored_settings` reads a master's own BubbleKern parameter over the
+		# font's - so reading them all against the selected master gave every
+		# other master the wrong gap, bend and grid. Cached per master: the
+		# settings are a parameter lookup, and a run is one per layer.
+		key = master.id if master is not None else None
+		if key not in cache:
+			cache[key] = (auto.auto_settings(font, master),
+				auto.resolve_grid(font, master))
+		return cache[key]
+
 	for layer in chosenLayers(font, layers):
 		if mergeFromComponents(layer, side):
 			merged += 1
 			continue
+		settings, grid = forMaster(layer.associatedFontMaster()
+			or font.selectedFontMaster)
 		nodes = auto.auto_bubble_nodes(
 			layer, side,
 			gap=settings['gap'], step=settings['step'],
