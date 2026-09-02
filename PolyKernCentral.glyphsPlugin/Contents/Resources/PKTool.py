@@ -230,11 +230,16 @@ bubbleDrawingIsActive = False  # True if I want to draw all the time
 class PolyKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
 
-	# THE ICON IS 18 POINTS TALL WHATEVER THE ARTWORK IS. Every toolbar icon
-	# in Glyphs is drawn at about that; the PDF is 56x81, and left at its own
-	# size it would tower over the rest of the bar.
+	# THE ICON IS 17 POINTS TALL WHATEVER THE ARTWORK IS, and the PDF is
+	# TRIMMED TO ITS INK so that those 17 points are all mark. Glyphs draws a
+	# tool icon at the image's own size and does not fit it to the bar, so
+	# padding inside the artwork comes straight off what you see: the first
+	# cut of this file was 56x81 with the mark filling 65% of the height, and
+	# at 18 points tall it drew 12 points of ink beside neighbours drawing 15
+	# to 18. Measured off the toolbar: the text tool 15, annotate 15.5, the
+	# hand 18.
 	TOOLBAR_ICON = 'PolyKernIcon.pdf'
-	TOOLBAR_ICON_HEIGHT = 18.0
+	TOOLBAR_ICON_HEIGHT = 17.0
 
 	@objc.python_method
 	def setToolbarIcon(self):
@@ -244,6 +249,9 @@ class PolyKernTool(SelectTool):
 		`toolbar.pdf`, which is how this had one before, but that path cannot
 		size it and cannot make it a template - and the artwork is white, so
 		untinted it is invisible against a light toolbar.
+
+		A REPLACEMENT PDF HAS TO BE TRIMMED TO ITS INK, or it draws small: see
+		TOOLBAR_ICON_HEIGHT.
 		"""
 		try:
 			path = os.path.join(os.path.dirname(self.__file__()), self.TOOLBAR_ICON)
