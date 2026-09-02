@@ -33,13 +33,20 @@ It’s a work in progress and purposefully unavailable on Plugin Manager for now
 - Info section: each side’s reference field and auto-generate button, and the selected node’s X and Y, sit beside GlyphsApp’s own info box.
 - Live kerning: the kern value against the neighbours is shown, and kept up to date, while a bubble node is dragged.
 - Kerning groups: the Kerner can write groups rather than flat pairs, and can be narrowed to the pairs that actually occur in text.
-- Tests: 142 tests covering the parts that are pure Python, run without GlyphsApp.
+- Tests: 158 tests covering the parts that are pure Python, run without GlyphsApp.
 
 ## Test files
 In the *Demo files* folder:
 - BK Test Serif: Toshi’s open-source sample roman file with pre-drawn bubbles.
 - BKTestSerif-Regular.otf: the font file with BBLH table.
 - PolyKernTester.html: currently the only place where you can test dynamic kerning using *BBLH* table.
+
+## Scripts
+In the *Scripts* folder, to be run from GlyphsApp's Script menu:
+- Rename BubbleKern data to PolyKern: a file drawn with the old plugin keeps its
+  bubbles in the file but PolyKern reads nothing under the old name. This renames
+  every key holding it, custom parameters included, one undo step per glyph. Set
+  `REVERSE = True` at the top of the script to go back.
 
 ## Missing features / To dos
 - Right to Left kerning.
