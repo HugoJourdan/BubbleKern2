@@ -16,7 +16,7 @@ import traceback
 import vanilla
 from GlyphsApp import Glyphs
 
-from BKCommonLogic import log
+from PKCommonLogic import log
 
 
 # Arrow keys step a numeric field, shift-arrow by ten. The field editor
@@ -39,7 +39,7 @@ NUDGE_STEPS = {
 try:
 	from vanilla.vanillaEditText import VanillaEditTextDelegate
 
-	class BubbleKernNudgeDelegate(VanillaEditTextDelegate):
+	class PolyKernNudgeDelegate(VanillaEditTextDelegate):
 
 		def control_textView_doCommandBySelector_(self, control, textView, selector):
 			try:
@@ -61,9 +61,9 @@ try:
 				return False
 
 	class NudgeEditText(vanilla.EditText):
-		nsTextFieldDelegateClass = BubbleKernNudgeDelegate
+		nsTextFieldDelegateClass = PolyKernNudgeDelegate
 
-	class BubbleKernCompletionDelegate(VanillaEditTextDelegate):
+	class PolyKernCompletionDelegate(VanillaEditTextDelegate):
 		"""Offer the font's own glyph names while a reference is typed.
 
 		The field takes a glyph NAME, which for anything past the alphabet is
@@ -117,7 +117,7 @@ try:
 			VanillaEditTextDelegate.controlTextDidChange_(self, notification)
 
 	class CompletingEditText(vanilla.EditText):
-		nsTextFieldDelegateClass = BubbleKernCompletionDelegate
+		nsTextFieldDelegateClass = PolyKernCompletionDelegate
 
 except Exception:  # a vanilla that keeps its delegate elsewhere: no nudging, but a window
 	NudgeEditText = vanilla.EditText

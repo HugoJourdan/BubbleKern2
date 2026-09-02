@@ -7,11 +7,11 @@
 	<key>CFBundleExecutable</key>
 	<string>plugin</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.Tosche.BubbleKern4</string>
+	<string>com.Tosche.PolyKern</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>BubbleKern4</string>
+	<string>PolyKern</string>
 	<key>CFBundleShortVersionString</key>
 	<string>____BundleVersionString____</string> <!-- 1.0 -->
 	<key>CFBundleVersion</key>
@@ -25,11 +25,11 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright, ____Developer____, ____YEAR____</string>
 	<!-- <key>NSPrincipalClasses</key>
-	<string>BubbleKern4</string> -->
+	<string>PolyKern</string> -->
 	<key>Principal Classes</key>
 	<array>
-		<string>BubbleKernKerner</string>
-		<string>BubbleKernTool</string>
+		<string>PolyKernKerner</string>
+		<string>PolyKernTool</string>
 	</array>
 	<key>PyMainFileNames</key>
 	<array>

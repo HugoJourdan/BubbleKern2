@@ -7,7 +7,7 @@ from AppKit import NSBezierPath, NSTextField
 from Cocoa import NSAlert, NSAlertStyleCritical
 from dataclasses import dataclass, field
 
-from BKSide import LEFT, RIGHT, of
+from PKSide import LEFT, RIGHT, of
 from typing import Optional
 import math
 
@@ -44,15 +44,15 @@ import logging
 import os
 
 def _setup_logger():
-	logger = logging.getLogger("BubbleKern")
+	logger = logging.getLogger("PolyKern")
 
 	if logger.handlers:
 		return logger  # already configured (important for Glyphs reload)
 
 	logger.setLevel(logging.DEBUG)
-	log_path = os.path.expanduser("~/Desktop/Glyphs_BubbleKern.log")
+	log_path = os.path.expanduser("~/Desktop/Glyphs_PolyKern.log")
 	handler = logging.FileHandler(log_path)
-	formatter = logging.Formatter("%(asctime)s BubbleKern: %(message)s")
+	formatter = logging.Formatter("%(asctime)s PolyKern: %(message)s")
 	handler.setFormatter(formatter)
 	logger.addHandler(handler)
 	logger.propagate = False  # prevents double logging
@@ -108,7 +108,7 @@ def show_alert(message: str, secondMessage: str = '', cancel: bool = True, askSt
 	elif response == 1001:  # Cancel
 		return False
 
-# called from BKTool when getting node position for display; converts tempData's node x to userData's node x for display and storage
+# called from PKTool when getting node position for display; converts tempData's node x to userData's node x for display and storage
 # also from buildBubble()
 def tempToUserNodeX(x, y, italicAngle, xHeight):
 	if italicAngle != 0:
@@ -655,7 +655,7 @@ def isMirrored(layer, isLeft) -> bool:
 	return bool(layer.userData[of(isLeft).key('Mirror')])
 
 # SPLIT A PATH INTO ITS SUBPATHS AND MERGE THEM INTO ONE WALL.
-# THE MERGE ITSELF IS IN BKAutoBubble.union_walls, WHICH IS PURE AND TESTED;
+# THE MERGE ITSELF IS IN PKAutoBubble.union_walls, WHICH IS PURE AND TESTED;
 # THIS IS THE NSBezierPath WRAPPER AROUND IT.
 def unionSubpaths(bubblePath, isLeft) -> NSBezierPath:
 	try:
@@ -675,9 +675,9 @@ def unionSubpaths(bubblePath, isLeft) -> NSBezierPath:
 		if len(subpaths) < 2:
 			return bubblePath  # the common case: nothing to merge
 
-		import BKAutoBubble
-		merged = BKAutoBubble.union_walls(subpaths, keep_min=isLeft)
-		merged = BKAutoBubble.taut_join(merged, subpaths, keep_min=isLeft)
+		import PKAutoBubble
+		merged = PKAutoBubble.union_walls(subpaths, keep_min=isLeft)
+		merged = PKAutoBubble.taut_join(merged, subpaths, keep_min=isLeft)
 		if not merged:
 			return bubblePath
 		united = NSBezierPath.alloc().init()
@@ -776,8 +776,8 @@ def getKernValue(bubblePathL: NSBezierPath, bubblePathR: NSBezierPath, widthL: i
 		if space:
 			# AIR BETWEEN THE TWO BUBBLES, one rule for the kerner and the fit
 			# alike: it moves only pairs that already kern, and never past 0.
-			import BKAutoBubble
-			closest = (-BKAutoBubble.with_fit(-closest[0], space), closest[1])
+			import PKAutoBubble
+			closest = (-PKAutoBubble.with_fit(-closest[0], space), closest[1])
 		return closest if withRow else closest[0]
 	except ValueError:
 		# log(f'getKernValue error: {traceback.format_exc()}', error=True)
@@ -875,7 +875,7 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		m = f.selectedFontMaster
 
 		# build pairs list
-		presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"]
+		presetsDic = Glyphs.defaults["com.Tosche.PolyKern.presetsDic"]
 		preset = presetsDic[presetName] # preset for use
 		pairsList = []
 		for perm in preset: # build pairsList
@@ -895,7 +895,7 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		# GROUP SHARE ONE WALL, SO EVERY PAIR IN A GROUP HAS ONE ANSWER. WRITING
 		# IT ONCE COLLAPSES THE PAIR COUNT BY ROUGHLY THE SQUARE OF THE AVERAGE
 		# GROUP SIZE AND LEAVES A KERNING TABLE A PERSON CAN OPEN AND READ.
-		import BKAutoBubble
+		import PKAutoBubble
 		# ONLY THE PAIRS THAT TURN UP IN REAL TEXT, if asked. A preset is a
 		# cartesian product - uppercase against uppercase is 676 pairs - and
 		# most of those two letters never stand together in any language. This
@@ -904,15 +904,15 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		#
 		# BEFORE THE GROUPS COLLAPSE, because after it pairsList is keyed by
 		# group name and the list is written in glyphs.
-		if bool(BKAutoBubble._pref(BKAutoBubble.PREF_RELEVANT_ONLY, False)):
-			relevant = BKAutoBubble.relevant_pair_names(namesByCharacter(f))
+		if bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)):
+			relevant = PKAutoBubble.relevant_pair_names(namesByCharacter(f))
 			if relevant:
 				pairsList = {pair for pair in pairsList if pair in relevant}
-		useGroups = bool(BKAutoBubble._pref(BKAutoBubble.PREF_KERN_GROUPS, False))
+		useGroups = bool(PKAutoBubble._pref(PKAutoBubble.PREF_KERN_GROUPS, False))
 		# Read ONCE: the loop below runs over every pair in the preset, and
 		# both of these come from the font's upm and a preference.
-		space = BKAutoBubble.fit_space(f, m)
-		threshold = BKAutoBubble.min_kern(f)
+		space = PKAutoBubble.fit_space(f, m)
+		threshold = PKAutoBubble.min_kern(f)
 		rightGroups, leftGroups = bubbleGroups(f, m.id) if useGroups else ({}, {})
 		if useGroups:
 			for name, group in rightGroups.items():
@@ -993,17 +993,17 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		log(f'kernOpenType error: {traceback.format_exc()}', error=True)
 
 
-# to be run from BK Tool. The measurement lives in BKAutoBubble; this is the
+# to be run from PolyKern Tool. The measurement lives in PKAutoBubble; this is the
 # name the rest of the plugin already knew it by.
 def autoBuildBubble(layer, isLeft=True):
 	try:
-		# imported here, not at the top: BKAutoBubble takes log() from this
+		# imported here, not at the top: PKAutoBubble takes log() from this
 		# module, and importing it up there would close the circle.
-		import BKAutoBubble
-		side = BKAutoBubble.LEFT if isLeft else BKAutoBubble.RIGHT
-		return BKAutoBubble.auto_bubble_nodes(
+		import PKAutoBubble
+		side = PKAutoBubble.LEFT if isLeft else PKAutoBubble.RIGHT
+		return PKAutoBubble.auto_bubble_nodes(
 			layer, side,
-			grid=BKAutoBubble.resolve_grid(layer.font(), layer.associatedFontMaster()))
+			grid=PKAutoBubble.resolve_grid(layer.font(), layer.associatedFontMaster()))
 	except Exception:
 		log(f'autoBuildBubble error: {traceback.format_exc()}', error=True)
 		return None

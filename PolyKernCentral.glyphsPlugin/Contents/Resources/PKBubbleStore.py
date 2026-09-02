@@ -2,7 +2,7 @@
 """What a run puts in the font: the bubbles, and the kerning they imply.
 
 None of this needs a canvas. It reads and writes `userData` on layers, asks
-`BKAutoBubble` to measure, and reports counts back; the tool wraps it in undo
+`PKAutoBubble` to measure, and reports counts back; the tool wraps it in undo
 groups and redraws, and the Kerner calls the same functions without a tool
 being loaded at all.
 """
@@ -12,15 +12,15 @@ import traceback
 from Cocoa import NSPoint
 from GlyphsApp import Glyphs, GSControlLayer, GSLayer
 
-import BKAutoBubble as auto
-import BKPreview as preview
-from BKSide import LEFT, RIGHT, SIDES, of
-from BKCommonLogic import (getFinalBubble, getKernValue, isBlankWall,
+import PKAutoBubble as auto
+import PKPreview as preview
+from PKSide import LEFT, RIGHT, SIDES, of
+from PKCommonLogic import (getFinalBubble, getKernValue, isBlankWall,
 	isMirrored, isReferenceValid, log, mergeableComposite, recordBox,
 	tempToUserNodeX)
 
 # font.userData: EVERY PAIR THE PREVIEW WROTE, SO IT CAN ALWAYS BE TAKEN BACK
-PreviewKerningKey = 'BubbleKernPreviewKerning'
+PreviewKerningKey = 'PolyKernPreviewKerning'
 
 
 def infoForLayer(layer):  # RETURNS referL, referR
@@ -390,7 +390,7 @@ def autoGenerate(font, isLeft, layers=None):
 	def forMaster(master):
 		# SETTINGS FOLLOW THE LAYER'S OWN MASTER, NOT THE SELECTED ONE. The
 		# all-masters run hands in layers of every master at once, and
-		# `stored_settings` reads a master's own BubbleKern parameter over the
+		# `stored_settings` reads a master's own PolyKern parameter over the
 		# font's - so reading them all against the selected master gave every
 		# other master the wrong gap, bend and grid. Cached per master: the
 		# settings are a parameter lookup, and a run is one per layer.

@@ -1,6 +1,6 @@
 """A composite wears its components' bubbles.
 
-BKCommonLogic imports GlyphsApp, so the module is loaded against a stub and
+PKCommonLogic imports GlyphsApp, so the module is loaded against a stub and
 fed the smallest objects that answer the questions it asks. What is under
 test is the merge, not Glyphs: which wall a layer ends up with when it is
 made of components, and which one wins when it also has nodes of its own.
@@ -15,7 +15,7 @@ import types
 
 import pytest
 
-RESOURCES = (pathlib.Path(__file__).parent.parent / 'BubbleKernCentral.glyphsPlugin'
+RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
 		/ 'Contents' / 'Resources')
 
 
@@ -26,13 +26,13 @@ def _load():
 	stub.GSAlignmentDisable = -1
 	sys.modules.setdefault('GlyphsApp', stub)
 	spec = importlib.util.spec_from_file_location(
-			'bk_common_logic', RESOURCES / 'BKCommonLogic.py')
+			'pk_common_logic', RESOURCES / 'PKCommonLogic.py')
 	module = importlib.util.module_from_spec(spec)
 	spec.loader.exec_module(module)
 	return module
 
 
-bk = _load()
+pk = _load()
 
 MASTER = types.SimpleNamespace(id='m1', italicAngle=0, xHeight=500, name='Regular')
 
@@ -60,9 +60,9 @@ class Layer:
 		self.userData = UserData()
 		self.tempData = {}
 		if nodesL is not None:
-			self.userData['BubbleKernNodesL'] = nodesL
+			self.userData['PolyKernNodesL'] = nodesL
 		if nodesR is not None:
-			self.userData['BubbleKernNodesR'] = nodesR
+			self.userData['PolyKernNodesR'] = nodesR
 		self.parent = Glyph(name, self)
 
 	def font(self):
@@ -103,7 +103,7 @@ def composite(o, accent, ownNodes=None, **kwargs):
 
 def test_composite_merges_its_components(parts):
 	o, accent = parts
-	built = wall(bk.getFinalBubble(composite(o, accent), isLeft=True))
+	built = wall(pk.getFinalBubble(composite(o, accent), isLeft=True))
 	assert built, 'a composite of two walled components has a wall'
 	# The accent reaches furthest into the whitespace, MOVED to where it sits.
 	assert min(x for x, y in built) == pytest.approx(74)
@@ -112,7 +112,7 @@ def test_composite_merges_its_components(parts):
 
 def test_own_nodes_replace_the_merge(parts):
 	o, accent = parts
-	built = wall(bk.getFinalBubble(
+	built = wall(pk.getFinalBubble(
 			composite(o, accent, ownNodes=[(200, 0), (200, 700)]), isLeft=True))
 	# Drawn beats inherited, INWARD AS WELL AS OUT: a union would have kept
 	# the components' 74 and the hand-drawn wall would not have moved.
@@ -121,17 +121,17 @@ def test_own_nodes_replace_the_merge(parts):
 
 def test_the_default_line_does_not_replace_it(parts):
 	o, accent = parts
-	built = wall(bk.getFinalBubble(
+	built = wall(pk.getFinalBubble(
 			composite(o, accent, ownNodes=[(0, 0), (0, 700)]), isLeft=True))
 	assert min(x for x, y in built) == pytest.approx(74)
 
 
 def test_mergeable_composite(parts):
 	o, accent = parts
-	assert bk.mergeableComposite(composite(o, accent))
-	assert not bk.mergeableComposite(composite(o, accent, aligned=False))
-	assert not bk.mergeableComposite(composite(o, accent, scale=-1.0))
-	assert not bk.mergeableComposite(o)  # draws its own outline
+	assert pk.mergeableComposite(composite(o, accent))
+	assert not pk.mergeableComposite(composite(o, accent, aligned=False))
+	assert not pk.mergeableComposite(composite(o, accent, scale=-1.0))
+	assert not pk.mergeableComposite(o)  # draws its own outline
 
 
 # --- o, circumflexcomb, ocircumflex ----------------------------------------
@@ -167,7 +167,7 @@ def oh():
 
 def test_the_left_wall_of_ocircumflex_is_its_two_components(oh):
 	o, accent, ocirc = oh
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	# The o's wall as drawn, then the accent's MOVED to where the accent sits.
 	assert built[:7] == [(float(x), float(y)) for x, y in O_L]
 	assert built[7:] == [(7.0 + ACCENT_DX, 571.0), (121.0 + ACCENT_DX, 700.0)]
@@ -175,7 +175,7 @@ def test_the_left_wall_of_ocircumflex_is_its_two_components(oh):
 
 def test_the_right_wall_is_placed_against_each_layers_own_advance(oh):
 	o, accent, ocirc = oh
-	built = wall(bk.getFinalBubble(ocirc, isLeft=False))
+	built = wall(pk.getFinalBubble(ocirc, isLeft=False))
 	# The o's wall against the o's 600; the accent's against ITS OWN 454 and
 	# then moved by 74 - not against the 600 of the glyph being built.
 	assert built[:7] == [(x + O_WIDTH, float(y)) for x, y in O_R]
@@ -189,7 +189,7 @@ def test_a_composites_own_cache_is_not_a_wall_of_its_own(oh):
 	drawn it merges the answer with itself."""
 	o, accent, ocirc = oh
 	ocirc.tempData['bubbles'] = {'nodesL': [Node(23, 571), Node(155, 700)]}
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	assert (23.0, 571.0) not in built, 'the cache is not a third component'
 	assert built[7:] == [(81.0, 571.0), (195.0, 700.0)]
 
@@ -200,8 +200,8 @@ def test_a_stale_cache_cannot_ratchet_the_wall_outward(oh):
 	accent could be pushed out but never pulled back in."""
 	o, accent, ocirc = oh
 	ocirc.tempData['bubbles'] = {'nodesL': [Node(23, 571), Node(155, 700)]}
-	accent.userData['BubbleKernNodesL'] = [(60, 571), (180, 700)]  # pulled IN
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	accent.userData['PolyKernNodesL'] = [(60, 571), (180, 700)]  # pulled IN
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	assert min(x for x, y in built if y >= 571) == pytest.approx(134)
 
 
@@ -211,8 +211,8 @@ def test_a_component_with_no_wall_of_its_own_says_nothing(oh):
 	standing at the component's origin - outside the glyph when the component
 	is moved left - and the union keeps whatever reaches furthest out."""
 	o, accent, ocirc = oh
-	accent.userData['BubbleKernNodesL'] = [(0, 544), (0, 650)]
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	accent.userData['PolyKernNodesL'] = [(0, 544), (0, 650)]
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	assert built == [(float(x), float(y)) for x, y in O_L]
 
 
@@ -221,11 +221,11 @@ def test_a_component_moved_left_cannot_push_the_wall_past_the_origin(oh):
 	wall is the default line, and the accent's is moved 52 units left of the
 	origin. A left wall outside the glyph pushes everything away from it."""
 	o, accent, ocirc = oh
-	o.userData['BubbleKernNodesL'] = [(0, -6), (0, 506)]
-	accent.userData['BubbleKernNodesL'] = [(0, 544), (0, 650)]
+	o.userData['PolyKernNodesL'] = [(0, -6), (0, 506)]
+	accent.userData['PolyKernNodesL'] = [(0, 544), (0, 650)]
 	ocirc.components[1].transform = (1.0, 0.0, 0.0, 1.0, -52.0, 0.0)
-	ocirc.userData['BubbleKernNodesL'] = [(0, -6), (0, 650)]
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	ocirc.userData['PolyKernNodesL'] = [(0, -6), (0, 650)]
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	assert min(x for x, y in built) == pytest.approx(0), built
 
 
@@ -233,8 +233,8 @@ def test_a_component_with_no_bubble_at_all_is_skipped(oh):
 	"""gatherBubbleInfo answers None for a layer with nothing to give. Kept in
 	the list it is a child with no transform to read."""
 	o, accent, ocirc = oh
-	del o.userData['BubbleKernNodesL']
-	built = wall(bk.getFinalBubble(ocirc, isLeft=True))
+	del o.userData['PolyKernNodesL']
+	built = wall(pk.getFinalBubble(ocirc, isLeft=True))
 	assert built == [(81.0, 571.0), (195.0, 700.0)]
 
 
@@ -243,12 +243,12 @@ def test_a_merged_composite_is_never_asked_to_draw_one(oh):
 	Staleness must not ask for them straight back, or the wall is stamped on
 	again on the next interface update and the merge is over."""
 	o, accent, ocirc = oh
-	ocirc.userData['BubbleKernAutoL'] = 1
-	assert not bk.needsGenerating(ocirc, True)
+	ocirc.userData['PolyKernAutoL'] = 1
+	assert not pk.needsGenerating(ocirc, True)
 	# A GLYPH THAT DRAWS ITS OWN INK still gets one: nothing to borrow.
-	o.userData['BubbleKernAutoL'] = 1
-	del o.userData['BubbleKernNodesL']
-	assert bk.needsGenerating(o, True)
+	o.userData['PolyKernAutoL'] = 1
+	del o.userData['PolyKernNodesL']
+	assert pk.needsGenerating(o, True)
 
 
 # --- A side that mirrors the other one -------------------------------------
@@ -256,14 +256,14 @@ def test_a_merged_composite_is_never_asked_to_draw_one(oh):
 
 def mirrorTheAccent(accent):
 	# `=|` STORES NOTHING BUT THE FLAG, so the nodes go.
-	del accent.userData['BubbleKernNodesR']
-	accent.userData['BubbleKernMirrorR'] = 1
+	del accent.userData['PolyKernNodesR']
+	accent.userData['PolyKernMirrorR'] = 1
 
 
 def test_a_mirrored_side_is_the_other_one_flipped(oh):
 	o, accent, ocirc = oh
 	mirrorTheAccent(accent)
-	built = wall(bk.getFinalBubble(accent, isLeft=False))
+	built = wall(pk.getFinalBubble(accent, isLeft=False))
 	assert built == [(ACCENT_WIDTH - 7.0, 571.0), (ACCENT_WIDTH - 121.0, 700.0)]
 
 
@@ -274,7 +274,7 @@ def test_a_mirrored_side_on_a_component_still_reaches_the_composite(oh):
 	found none and the accent handed `ocircumflex` nothing."""
 	o, accent, ocirc = oh
 	mirrorTheAccent(accent)
-	built = wall(bk.getFinalBubble(ocirc, isLeft=False))
+	built = wall(pk.getFinalBubble(ocirc, isLeft=False))
 	above = [(x, y) for x, y in built if y > 524]
 	assert above, 'the accent is part of the wall'
 	# Its left wall flipped about its OWN advance, then moved to where it sits.

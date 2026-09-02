@@ -42,16 +42,16 @@ from Foundation import NSOperationQueue  # to print after the menu has let go
 
 from typing import Self
 
-from BKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
-import BKAutoBubble as auto
-import BKPreview as preview
-from BKGroupGrid import BKGroupGridView
-from BKSide import LEFT, RIGHT, SIDES, of
-from BKFields import CompletingEditText, NudgeEditText
-import BKBubbleStore as store
-from BKInfoBox import (GEAR_SYMBOL, PILL_POINT, InspectorGroup, PillGroup,
+from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
+import PKAutoBubble as auto
+import PKPreview as preview
+from PKGroupGrid import PKGroupGridView
+from PKSide import LEFT, RIGHT, SIDES, of
+from PKFields import CompletingEditText, NudgeEditText
+import PKBubbleStore as store
+from PKInfoBox import (GEAR_SYMBOL, PILL_POINT, InspectorGroup, PillGroup,
 	setPreviewGear)
-from BKCommonLogic import getKernValue
+from PKCommonLogic import getKernValue
 
 
 def soon(work):
@@ -79,7 +79,7 @@ def report(message):
 	"""
 	def say():
 		try:
-			print(f'BubbleKern: {message}')
+			print(f'PolyKern: {message}')
 		except Exception:
 			log(f'report error: {traceback.format_exc()}', error=True)
 	NSOperationQueue.mainQueue().addOperationWithBlock_(say)
@@ -225,7 +225,7 @@ MAGNET_POINTS = 6.0
 mainDrawingHandler = None
 bubbleDrawingIsActive = False  # True if I want to draw all the time
 
-class BubbleKernTool(SelectTool):
+class PolyKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
 
 	@objc.python_method
@@ -236,7 +236,7 @@ class BubbleKernTool(SelectTool):
 			GSCallbackHandler.addCallback_forOperation_(mainDrawingHandler, DRAWINACTIVE)
 
 		self.name = Glyphs.localize({
-			"en": "BubbleKern Tool",
+			"en": "PolyKern Tool",
 		})
 		self.keyboardShortcutModifier = (NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption)
 		self.keyboardShortcut = 'b'
@@ -559,23 +559,23 @@ class BubbleKernTool(SelectTool):
 			f = Glyphs.font
 
 			# check if initial dialog is necessary
-			use = f.tempData['useBubbleKern'] # if user has already clicked Yes or Cancel in the dialog
+			use = f.tempData['usePolyKern'] # if user has already clicked Yes or Cancel in the dialog
 			if use == None: # if no pre-existing answer in userData
-				use = f.userData['useBubbleKern']
+				use = f.userData['usePolyKern']
 
-			if use == True: # BubbleKern already in use
+			if use == True: # PolyKern already in use
 				proceed = True
 			elif use == None: # on the first run per font file
-				alertTitle = 'Starting BubbleKern'
-				alertMessage = """Are you sure you want to use BubbleKern in this font?
-				(You can remove font's Bubble data from Edit > BubbleKern Kerner)"""
+				alertTitle = 'Starting PolyKern'
+				alertMessage = """Are you sure you want to use PolyKern in this font?
+				(You can remove font's Bubble data from Edit > PolyKern Kerner)"""
 				initialise = show_alert(message=alertTitle, secondMessage=alertMessage)
 			elif use == False:
-				Glyphs.showNotification("BubbleKern Tool", "If you want to use BubbleKern, please reopen the file.")
+				Glyphs.showNotification("PolyKern Tool", "If you want to use PolyKern, please reopen the file.")
 
 			if proceed or initialise: # standard proceed
-				f.tempData['useBubbleKern'] = True
-				f.userData['useBubbleKern'] = True
+				f.tempData['usePolyKern'] = True
+				f.userData['usePolyKern'] = True
 				Glyphs.addCallback(self.updateUI, UPDATEINTERFACE)
 				self.infoBoxLive = True
 				self.placeInfoBoxSoon()
@@ -587,7 +587,7 @@ class BubbleKernTool(SelectTool):
 				)
 				self.activeLayer = self.editViewController().activeLayer() if self.editViewController() is not None else None
 			else: # Cancel has been clicked or use is already False, go to Select Tool
-				f.tempData['useBubbleKern'] = False
+				f.tempData['usePolyKern'] = False
 				self.deactivate()
 				f.tool = 'SelectTool'
 
@@ -914,8 +914,8 @@ class BubbleKernTool(SelectTool):
 
 			userData = layer.userData
 
-			nodesL = userData.get("BubbleKernNodesL", None)
-			nodesR = userData.get("BubbleKernNodesR", None)
+			nodesL = userData.get("PolyKernNodesL", None)
+			nodesR = userData.get("PolyKernNodesR", None)
 
 			# A LAYER THAT BORROWS ITS WALL - a composite merging its components
 			# - has nothing of its own to load, and the made-up default below
@@ -970,7 +970,7 @@ class BubbleKernTool(SelectTool):
 
 	@objc.python_method
 	def foreground(self, layer):  # layer to draw nodes
-		if Glyphs.font.tool != self.__class__.__name__ or layer == None or layer.name is None:  # 'BubbleKernTool'
+		if Glyphs.font.tool != self.__class__.__name__ or layer == None or layer.name is None:  # 'PolyKernTool'
 			return
 		try:
 			graphicView = self.editViewController().graphicView()
@@ -1090,7 +1090,7 @@ class BubbleKernTool(SelectTool):
 		}
 		'''
 		# log('active current tool =', Glyphs.font.tool)
-		#if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
+		#if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'PolyKernTool'
 		# log('Drawing active layer', layer.parent)
 		self.drawGrid(layer, options)
 		self.drawBubbleWalls(layer, True, options)
@@ -1147,7 +1147,7 @@ class BubbleKernTool(SelectTool):
 			log(f'drawGrid error: {traceback.format_exc()}', error=True)
 
 	def drawBackgroundForInactiveLayer_options_(self, layer, options):  # run drawBubbleWalls()
-		if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'BubbleKernTool'
+		if Glyphs.font.tool == self.__class__.__name__ and layer != None and layer.name is not None: # 'PolyKernTool'
 			self.drawBubbleWalls(layer, False, options)
 
 	@objc.python_method
@@ -1193,7 +1193,7 @@ class BubbleKernTool(SelectTool):
 
 	# CALLED WHEN MOUSE MOVES. CHECKS IF MOUSE IS NEAR ANY NODES OR LINE SEGMENTS TO HIGHLIGHT.
 	def mouseMoved_(self, theEvent):
-		objc.super(BubbleKernTool, self).mouseMoved_(theEvent)
+		objc.super(PolyKernTool, self).mouseMoved_(theEvent)
 
 		try:
 			controller = self.editViewController()
@@ -1519,7 +1519,7 @@ class BubbleKernTool(SelectTool):
 
 	def mouseUp_(self, theEvent):
 		try:
-			objc.super(BubbleKernTool, self).mouseUp_(theEvent)  # Let Glyphs do its default mouseUp_
+			objc.super(PolyKernTool, self).mouseUp_(theEvent)  # Let Glyphs do its default mouseUp_
 			self.setActiveLayer()
 			self.keepOnlyBubbleNodes(self.activeLayer)
 			self.saveNodesToLayer(self.activeLayer)
@@ -1533,7 +1533,7 @@ class BubbleKernTool(SelectTool):
 		try:
 			# if the click is a double click, let Glyphs handle it (e.g. for text editing)
 			if theEvent.clickCount() > 1:
-				objc.super(BubbleKernTool, self).mouseDown_(theEvent)
+				objc.super(PolyKernTool, self).mouseDown_(theEvent)
 				return
 
 			controller = self.editViewController()
@@ -1603,7 +1603,7 @@ class BubbleKernTool(SelectTool):
 						layer.selection = [new_node]
 						controller.redraw()
 						return
-			objc.super(BubbleKernTool, self).mouseDown_(theEvent)
+			objc.super(PolyKernTool, self).mouseDown_(theEvent)
 			self.keepOnlyBubbleNodes(graphicView.activeLayer())
 
 		except Exception:
@@ -1631,7 +1631,7 @@ class BubbleKernTool(SelectTool):
 					return
 		except Exception:
 			log(f'keyDown_ error: {traceback.format_exc()}', error=True)
-		objc.super(BubbleKernTool, self).keyDown_(theEvent)
+		objc.super(PolyKernTool, self).keyDown_(theEvent)
 
 	def addMenuItemsForEvent_toMenu_(self, theEvent, contextMenu):
 		"""Put the settings on the canvas's own right-click menu.
@@ -1664,7 +1664,7 @@ class BubbleKernTool(SelectTool):
 					contextMenu.insertItem_atIndex_(entry, where)
 					where += 1
 			item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-				'BubbleKern Settings…', 'openSettings:', '')
+				'PolyKern Settings…', 'openSettings:', '')
 			item.setTarget_(self)
 			contextMenu.insertItem_atIndex_(item, where)
 		except Exception:
@@ -1875,7 +1875,7 @@ class BubbleKernTool(SelectTool):
 		except Exception:
 			log(f'decomposeBubble error: {traceback.format_exc()}', error=True)
 
-	# AUTOMATIC BUBBLES AND THE GRID. THE MEASUREMENT LIVES IN BKAutoBubble;
+	# AUTOMATIC BUBBLES AND THE GRID. THE MEASUREMENT LIVES IN PKAutoBubble;
 	# EVERYTHING HERE IS ABOUT GETTING IT ONTO GLYPHS AND BACK.
 
 	@objc.python_method
@@ -2090,7 +2090,7 @@ class BubbleKernTool(SelectTool):
 			self.groupW = vanilla.Sheet((560, 450), parent)
 			w = self.groupW
 			w.info = vanilla.TextBox((15, 14, -15, 17), summary, sizeStyle='small')
-			grid = BKGroupGridView.alloc().initWithFrame_(
+			grid = PKGroupGridView.alloc().initWithFrame_(
 				NSMakeRect(0, 0, 528, 1))
 			grid.setGroups(groups, font, font.selectedFontMaster.id)
 			w.groups = vanilla.ScrollView((15, 40, -15, -45), grid,
@@ -2230,7 +2230,7 @@ class BubbleKernTool(SelectTool):
 		try:
 			# FLOATING: THE POINT OF THIS WINDOW IS TO TURN A KNOB AND LOOK AT THE
 			# CANVAS, WHICH IS NOT SOMETHING A WINDOW THAT HIDES BEHIND IT CAN DO.
-			self.setW = vanilla.FloatingWindow((700, 398), 'BubbleKern Settings')
+			self.setW = vanilla.FloatingWindow((700, 398), 'PolyKern Settings')
 			w = self.setW
 			# LANDSCAPE, IN TWO COLUMNS, with a rule down the middle: the wall
 			# settings above it, and below, what the kerner does with the walls
@@ -2296,7 +2296,7 @@ class BubbleKernTool(SelectTool):
 		# the drawing keeping clear of both.
 		w.previewBox = vanilla.Group((15, 36, -15, 190))
 		box = w.previewBox
-		self.previewView = preview.BubbleKernPreviewView.alloc().initWithFrame_(
+		self.previewView = preview.PolyKernPreviewView.alloc().initWithFrame_(
 			NSMakeRect(0, 0, 670, 190))
 		self.previewView.setAutoresizingMask_(18)  # width and height sizable
 		box.getNSView().addSubview_(self.previewView)
@@ -2571,7 +2571,7 @@ class BubbleKernTool(SelectTool):
 			board = NSPasteboard.generalPasteboard()
 			board.clearContents()
 			board.setString_forType_(text, NSPasteboardTypeString)
-			Glyphs.showNotification('BubbleKern',
+			Glyphs.showNotification('PolyKern',
 				'Settings copied. Paste them into Custom Parameters in Font '
 				'Info, on the font or on a master.')
 		except Exception:

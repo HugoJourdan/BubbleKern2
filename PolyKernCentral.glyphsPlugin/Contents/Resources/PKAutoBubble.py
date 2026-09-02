@@ -1,5 +1,5 @@
 # encoding: utf-8
-"""Automatic bubble generation and grouping for BubbleKern.
+"""Automatic bubble generation and grouping for PolyKern.
 
 A bubble side is a polyline in the whitespace beside a glyph, and what it is
 FOR is to meet the neighbour's bubble at the distance the designer wants. So
@@ -9,7 +9,7 @@ its curve, and a neighbour meets both at the same distance.
 
 The measurement half is PORTED from AZ-Fingerprints (that plugin's
 `azfingerprints.py`, taken 2026-08-18) rather than imported, because it is a
-separate bundle BubbleKern cannot assume is installed. The ported functions
+separate bundle PolyKern cannot assume is installed. The ported functions
 keep their original docstrings: those record what was measured against three
 families' hand-drawn kerning groups, and rewriting them here would invent a
 second, unmeasured story. Diff the two files to see drift.
@@ -26,10 +26,10 @@ import math
 import os
 import re
 
-from BKSide import LEFT, RIGHT  # noqa: F401  (re-exported; see below)
+from PKSide import LEFT, RIGHT  # noqa: F401  (re-exported; see below)
 
 try:
-    from BKCommonLogic import log
+    from PKCommonLogic import log
 except ImportError:  # tests import this module without GlyphsApp
     def log(message='', error=None):
         pass
@@ -37,7 +37,7 @@ except ImportError:  # tests import this module without GlyphsApp
 
 # --- Ported constants -----------------------------------------------------
 
-# THE TWO SIDES COME FROM `BKSide`. They are still exactly "L" and "R" - `Side`
+# THE TWO SIDES COME FROM `PKSide`. They are still exactly "L" and "R" - `Side`
 # is a str subclass whose string is the letter - so the ported code below, which
 # uses them as dict keys, cannot tell the difference.
 
@@ -73,7 +73,7 @@ PREFERRED_ANCHORS = (
 CODEPOINT_NAME = re.compile(r"^u(ni)?[0-9A-Fa-f]{4,6}(\.|$)")
 
 
-# --- BubbleKern's own constants -------------------------------------------
+# --- PolyKern's own constants -------------------------------------------
 
 # Nodes a generated bubble may have, and how coarsely it is thinned - the
 # tolerance in raster steps, so it scales with the em like everything else.
@@ -142,29 +142,35 @@ AMPLITUDE = 1.0
 WALL_ANGLE = 35.0
 WALL_SLOPE = math.tan(math.radians(WALL_ANGLE))
 
-GRID_PARAMETER = "BubbleKernGrid"
+GRID_PARAMETER = "PolyKernGrid"
 # One parameter, on the font or on a master, holding the settings that decide
 # what gets WRITTEN to the file. The preview switches are not in it: where a
 # person points their eyes is not a property of the drawing.
-SETTINGS_PARAMETER = "BubbleKern"
-PREF_GRID_ON = "com.Tosche.BubbleKern.grid.on"
-PREF_GRID_Y = "com.Tosche.BubbleKern.grid.y"
-PREF_TOLERANCE = "com.Tosche.BubbleKern.auto.tolerance"
-PREF_WALL_ANGLE = "com.Tosche.BubbleKern.auto.wallAngle"
-PREF_MAX_INSET = "com.Tosche.BubbleKern.auto.maxInset"
-PREF_AMPLITUDE = "com.Tosche.BubbleKern.auto.amplitude"
-PREF_PREVIEW_KERN = "com.Tosche.BubbleKern.previewKern"
-PREF_FOLLOW_SPACING = "com.Tosche.BubbleKern.followSpacing"
-PREF_KERN_GROUPS = "com.Tosche.BubbleKern.kernGroups"
-PREF_RELEVANT_ONLY = "com.Tosche.BubbleKern.relevantOnly"
-PREF_PREVIEW_TEXT = "com.Tosche.BubbleKern.previewText"
-PREF_PREVIEW_WALLS = "com.Tosche.BubbleKern.previewWalls"
-PREF_PREVIEW_KERNED = "com.Tosche.BubbleKern.previewKerned"
-PREF_FIT_TEXT = "com.Tosche.BubbleKern.fitText"
-PREF_FIT = "com.Tosche.BubbleKern.fit"
-PREF_MIN_KERN = "com.Tosche.BubbleKern.minKern"
+SETTINGS_PARAMETER = "PolyKern"
+PREF_GRID_ON = "com.Tosche.PolyKern.grid.on"
+PREF_GRID_Y = "com.Tosche.PolyKern.grid.y"
+PREF_TOLERANCE = "com.Tosche.PolyKern.auto.tolerance"
+PREF_WALL_ANGLE = "com.Tosche.PolyKern.auto.wallAngle"
+PREF_MAX_INSET = "com.Tosche.PolyKern.auto.maxInset"
+PREF_AMPLITUDE = "com.Tosche.PolyKern.auto.amplitude"
+PREF_PREVIEW_KERN = "com.Tosche.PolyKern.previewKern"
+PREF_FOLLOW_SPACING = "com.Tosche.PolyKern.followSpacing"
+PREF_KERN_GROUPS = "com.Tosche.PolyKern.kernGroups"
+PREF_RELEVANT_ONLY = "com.Tosche.PolyKern.relevantOnly"
+PREF_PREVIEW_TEXT = "com.Tosche.PolyKern.previewText"
+PREF_PREVIEW_WALLS = "com.Tosche.PolyKern.previewWalls"
+PREF_PREVIEW_KERNED = "com.Tosche.PolyKern.previewKerned"
+PREF_FIT_TEXT = "com.Tosche.PolyKern.fitText"
+PREF_FIT = "com.Tosche.PolyKern.fit"
+PREF_MIN_KERN = "com.Tosche.PolyKern.minKern"
 # Per cent of the size that would fit the box: 100 is "as big as it goes".
-PREF_PREVIEW_SIZE = "com.Tosche.BubbleKern.previewSize"
+PREF_PREVIEW_SIZE = "com.Tosche.PolyKern.previewSize"
+
+# WHAT THIS PLUGIN USED TO BE CALLED, kept for exactly one purpose: carrying
+# the preferences saved under it across. See `migrate_preferences`.
+LEGACY_NAME = "BubbleKern"
+CURRENT_NAME = "PolyKern"
+MIGRATED_PREF = "com.Tosche.PolyKern.migratedFromBubbleKern"
 
 
 # --- Ported from AZ-Fingerprints ------------------------------------------
@@ -633,7 +639,7 @@ def raster_step(font):
 
 # Both sides arrive from `kern_profiles` as a depth measured INWARD from the
 # origin and from the advance, which is the whitespace a neighbour sees,
-# current spacing included. BubbleKern stores left x absolute from the origin
+# current spacing included. PolyKern stores left x absolute from the origin
 # and right x relative to the advance, so with one gap subtracted:
 #
 #     x_left(row)  =  depth(row) - gap
@@ -1092,17 +1098,17 @@ def parse_settings(value):
             continue
         parts = re.split(r"[:=]", chunk, 1)
         if len(parts) != 2:
-            log("BubbleKern: ignoring %r in %s" % (chunk.strip(), SETTINGS_PARAMETER))
+            log("PolyKern: ignoring %r in %s" % (chunk.strip(), SETTINGS_PARAMETER))
             continue
         key = parts[0].strip().lower()
         key = SETTING_ALIASES.get(key, key)
         if key not in SETTING_PREFS:
-            log("BubbleKern: ignoring unknown setting %r" % key)
+            log("PolyKern: ignoring unknown setting %r" % key)
             continue
         try:
             settings[key] = float(parts[1].strip())
         except ValueError:
-            log("BubbleKern: ignoring %s %r" % (key, parts[1].strip()))
+            log("PolyKern: ignoring %s %r" % (key, parts[1].strip()))
     return settings
 
 
@@ -1137,7 +1143,7 @@ def _parameter(holder, name):
 def level_settings(holder):
     """What ONE font or master says. -> {key: float}
 
-    `BubbleKernGrid` still counts, for the files written before there was a
+    `PolyKernGrid` still counts, for the files written before there was a
     settings parameter to put the grid in; the parameter wins where both name
     it.
     """
@@ -1147,7 +1153,7 @@ def level_settings(holder):
         if legacy is not None:
             grid = parse_grid(legacy)
             if grid is None:
-                log("BubbleKern: ignoring malformed %s %r" % (GRID_PARAMETER, legacy))
+                log("PolyKern: ignoring malformed %s %r" % (GRID_PARAMETER, legacy))
             else:
                 settings["grid"] = float(grid)
     return settings
@@ -1186,7 +1192,7 @@ def clear_settings(holder):
     try:
         del holder.customParameters[SETTINGS_PARAMETER]
     except Exception:
-        log("BubbleKern: could not remove %s" % SETTINGS_PARAMETER)
+        log("PolyKern: could not remove %s" % SETTINGS_PARAMETER)
 
 
 def setting_value(key, font=None, master=None, prefs=None):
@@ -1218,7 +1224,7 @@ def parse_grid(value):
 def resolve_grid(font, master=None, prefs=None):
     """The row spacing the bubble nodes snap to. -> int, 0 = no snapping.
 
-    The font's `BubbleKernGrid` parameter first, the app preference second,
+    The font's `PolyKernGrid` parameter first, the app preference second,
     off otherwise. The parameter wins because a grid is a property of the
     drawing rather than of the person: 10/50 on a 1000 upm text face means
     something else on a 2048 upm display face, and the file is what remembers
@@ -1231,6 +1237,60 @@ def resolve_grid(font, master=None, prefs=None):
     if not _pref(PREF_GRID_ON, False, prefs):
         return 0
     return max(0, int(_pref(PREF_GRID_Y, 0, prefs) or 0))
+
+
+def _write_pref(key, value, prefs=None):
+    """Set one app preference. -> True when it landed."""
+    if prefs is not None:
+        prefs[key] = value
+        return True
+    try:
+        from GlyphsApp import Glyphs
+        Glyphs.defaults[key] = value
+    except Exception:  # no Glyphs
+        return False
+    return True
+
+
+def migrate_preferences(prefs=None):
+    """Carry what was saved under the old name over to the new one. -> int
+
+    Everything the plugin remembers between launches lived under
+    `com.Tosche.BubbleKern*` - the kerning presets and the favourites above
+    all, which are a person's own work and not a setting that can just be
+    defaulted again. The rename would have left every one of them stranded.
+
+    Matched on the NAME rather than on a list of keys, so a preference nobody
+    remembered to enumerate still comes across: the window frame vanilla saves
+    under `NSWindow Frame com.Tosche.BubbleKernKerner.mainwindow` is not in
+    any constant here.
+
+    COPIED, NEVER MOVED, AND NEVER OVER A KEY THAT ALREADY HAS A VALUE. The
+    old plugin may still be installed beside this one, and two plugins writing
+    one preference is a worse thing to leave behind than a stale key.
+    """
+    if _pref(MIGRATED_PREF, False, prefs):
+        return 0
+    try:
+        if prefs is not None:
+            stored = dict(prefs)
+        else:
+            from Foundation import NSUserDefaults
+            stored = dict(NSUserDefaults.standardUserDefaults()
+                    .dictionaryRepresentation())
+    except Exception:
+        return 0
+    moved = 0
+    for key, value in stored.items():
+        if not isinstance(key, str) or LEGACY_NAME not in key:
+            continue
+        renamed = key.replace(LEGACY_NAME, CURRENT_NAME)
+        if renamed == key or stored.get(renamed) is not None:
+            continue
+        if _write_pref(renamed, value, prefs):
+            moved += 1
+    _write_pref(MIGRATED_PREF, True, prefs)
+    return moved
 
 
 def _pref(key, fallback=None, prefs=None):

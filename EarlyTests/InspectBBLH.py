@@ -3,7 +3,7 @@ import struct
 from fontTools.ttLib import TTFont
 
 # tt = TTFont('/Users/toshi/Library/Application Support/Glyphs 3/Temp/EisaiSerif260320-Expanded.otf')
-tt = TTFont('/Users/toshi/Github repos/BubbleKern2/BubbleKern/BubbleKernTest-Regular.otf')
+tt = TTFont('/Users/toshi/Github repos/PolyKern/PolyKern/PolyKernTest-Regular.otf')
 print("Tables in font:", tt.keys())
 #tt.close()
 

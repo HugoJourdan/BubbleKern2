@@ -1,7 +1,7 @@
 """Glyphs, faked well enough to import the plugin.
 
-BKCommonLogic and BKTool both `from GlyphsApp import ...` at module level, and
-BKTool looks up an ObjC class of Glyphs' own while it is being read. Neither
+PKCommonLogic and PKTool both `from GlyphsApp import ...` at module level, and
+PKTool looks up an ObjC class of Glyphs' own while it is being read. Neither
 exists outside the app, so both are stood in for here - once, before any test
 module is imported, because a stub installed twice is two different `GSLayer`
 classes and `isinstance` picks the wrong one.

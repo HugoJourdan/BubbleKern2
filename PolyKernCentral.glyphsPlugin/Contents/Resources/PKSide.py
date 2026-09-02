@@ -5,7 +5,7 @@ A SUBCLASS OF `str`, AND THE STRING IS THE LETTER - `L` and `R` are what the
 file itself writes. So a side works anywhere the letter did: as a dict key,
 interpolated into a message, concatenated. See CLAUDE.md.
 
-NO IMPORTS AT THE TOP ON PURPOSE. `BKAutoBubble` takes its `LEFT` and `RIGHT`
+NO IMPORTS AT THE TOP ON PURPOSE. `PKAutoBubble` takes its `LEFT` and `RIGHT`
 from here and is otherwise pure - it runs, and is tested, without Glyphs or
 AppKit - so the one AppKit name needed is looked up inside `color()` instead.
 """
@@ -15,7 +15,7 @@ class Side(str):
 	"""One of a glyph's two sides, and everything that follows from which one.
 
 	>>> LEFT.key('Nodes')
-	'BubbleKernNodesL'
+	'PolyKernNodesL'
 	"""
 
 	def __new__(cls, letter, isLeft, tempKey, defaultKey, colorName):
@@ -34,7 +34,7 @@ class Side(str):
 		`Nodes`, `Refer`, `Mirror`, `Box`, `Auto`, `Export` - the six the file
 		format has. Never build one by hand.
 		"""
-		return 'BubbleKern' + concept + str(self)
+		return 'PolyKern' + concept + str(self)
 
 	def origin(self, layer):
 		"""Where this side measures its x values from. -> float

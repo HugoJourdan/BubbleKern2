@@ -27,7 +27,7 @@ from Cocoa import (
 	NSView,
 )
 
-from BKCommonLogic import getFinalBubble, log
+from PKCommonLogic import getFinalBubble, log
 
 
 
@@ -73,7 +73,7 @@ def closedWall(wall, isLeft):
 		return None
 
 
-class BKGroupGridView(NSView):
+class PKGroupGridView(NSView):
 	"""Every glyph put in a group, with the side it was grouped on drawn.
 
 	Prefixed because an ObjC class name is process-global and Glyphs loads
@@ -120,9 +120,9 @@ class BKGroupGridView(NSView):
 						top + (index // columns) * row,
 						name, group['side']))
 				top += ((len(members) + columns - 1) // columns) * row + GROUP_PAD
-			objc.super(BKGroupGridView, self).setFrameSize_((width, max(top, 1.0)))
+			objc.super(PKGroupGridView, self).setFrameSize_((width, max(top, 1.0)))
 		except Exception:
-			log(f'BKGroupGridView relayout error: {traceback.format_exc()}', error=True)
+			log(f'PKGroupGridView relayout error: {traceback.format_exc()}', error=True)
 
 	def setFrameSize_(self, size):
 		# A SCROLL VIEW RESIZES ITS DOCUMENT VIEW AND TELLS IT NOTHING ELSE, so
@@ -130,11 +130,11 @@ class BKGroupGridView(NSView):
 		# relayout sets the height, and without it that would come straight back
 		# through here.
 		if getattr(self, '_laying', False):
-			objc.super(BKGroupGridView, self).setFrameSize_(size)
+			objc.super(PKGroupGridView, self).setFrameSize_(size)
 			return
 		self._laying = True
 		try:
-			objc.super(BKGroupGridView, self).setFrameSize_(size)
+			objc.super(PKGroupGridView, self).setFrameSize_(size)
 			self.relayout(float(size.width))
 		finally:
 			self._laying = False
@@ -147,7 +147,7 @@ class BKGroupGridView(NSView):
 			else:
 				self.paint()
 		except Exception:
-			log(f'BKGroupGridView error: {traceback.format_exc()}', error=True)
+			log(f'PKGroupGridView error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def paint(self):
@@ -171,7 +171,7 @@ class BKGroupGridView(NSView):
 			for left, top, name, side in getattr(self, '_cells', ()):
 				self.paintCell(left, top, name, side, caption)
 		except Exception:
-			log(f'BKGroupGridView paint error: {traceback.format_exc()}', error=True)
+			log(f'PKGroupGridView paint error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def art(self, layer, name):
@@ -236,4 +236,4 @@ class BKGroupGridView(NSView):
 				left + (GROUP_CELL - label.size().width) / 2.0,
 				top + GROUP_CELL + 1.0))
 		except Exception:
-			log(f'BKGroupGridView cell error: {traceback.format_exc()}', error=True)
+			log(f'PKGroupGridView cell error: {traceback.format_exc()}', error=True)

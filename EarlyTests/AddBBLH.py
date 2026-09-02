@@ -212,4 +212,4 @@ if __name__ == '__main__':
     }
     
     # Replace with your actual font path
-    add_bblh_table('/Users/toshi/Github repos/BubbleKern2/BubbleKern/EisaiSerif260320-Regular.otf', bblh_data, '/Users/toshi/Github repos/BubbleKern2/BubbleKern/EisaiSerif260320-RegularBBLH.otf')
+    add_bblh_table('/Users/toshi/Github repos/PolyKern/PolyKern/EisaiSerif260320-Regular.otf', bblh_data, '/Users/toshi/Github repos/PolyKern/PolyKern/EisaiSerif260320-RegularBBLH.otf')

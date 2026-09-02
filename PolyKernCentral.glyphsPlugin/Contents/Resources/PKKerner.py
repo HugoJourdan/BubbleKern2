@@ -12,7 +12,7 @@ from typing import Optional, Any
 from Foundation import NSMutableDictionary #, NSLog
 
 from AppKit import (
-	NSMenu,  # for the BubbleKern submenu
+	NSMenu,  # for the PolyKern submenu
 	NSMenuItem,
 	NSEventModifierFlagOption,  # for the all-masters variant of a menu item
 	NSImage,  # for setting plus and minus button image
@@ -23,9 +23,9 @@ from AppKit import (
 	NSURL,  # for revealing exported fonts in Finder
 )
 
-import BKAutoBubble
-import BKCommonLogic
-import BKExport
+import PKAutoBubble
+import PKCommonLogic
+import PKExport
 
 totalPairsPrefix = 'Total Pairs To Check : '
 
@@ -40,7 +40,7 @@ class escapableSheet(vanilla.Sheet):
 # 2. GENERATES FONT WITH BBLH AND BBLV TABLES (EXPERIMENTAL)
 # 3. REMOVES BUBBLE DATA ENTIRELY
 
-# THE BACKEND CODE FOR COMPUTING BUBBLE SHAPES SHOULD BE SHARED WITH THE DRAWING METHODS (IN BKCOMMONLOGIC)
+# THE BACKEND CODE FOR COMPUTING BUBBLE SHAPES SHOULD BE SHARED WITH THE DRAWING METHODS (IN PKCOMMONLOGIC)
 
 
 popupOptions = ["New Preset...", "Rename Selected...", "Duplicate Selected...", "Delete Selected..."]
@@ -53,15 +53,15 @@ import logging
 import os
 
 def _setup_logger():
-	logger = logging.getLogger("BubbleKern")
+	logger = logging.getLogger("PolyKern")
 
 	if logger.handlers:
 		return logger  # already configured (important for Glyphs reload)
 
 	logger.setLevel(logging.DEBUG)
-	log_path = os.path.expanduser("~/Desktop/Glyphs_BubbleKern.log")
+	log_path = os.path.expanduser("~/Desktop/Glyphs_PolyKern.log")
 	handler = logging.FileHandler(log_path)
-	formatter = logging.Formatter("%(asctime)s BubbleKern: %(message)s")
+	formatter = logging.Formatter("%(asctime)s PolyKern: %(message)s")
 	handler.setFormatter(formatter)
 	logger.addHandler(handler)
 	logger.propagate = False  # prevents double logging
@@ -73,23 +73,34 @@ def log(message:str = '', error: bool = None):
 
 # / INITIATE LOGGING
 
-class BubbleKernKerner(GeneralPlugin):
+class PolyKernKerner(GeneralPlugin):
 	name: str
 	w: Optional[vanilla.Window] = None
 
 	@objc.python_method
 	def settings(self):
 		self.name = Glyphs.localize({
-			'en': 'BubbleKern Kerner…',
-			'ja': 'BubbleKern ダイアログ…'
+			'en': 'PolyKern Kerner…',
+			'ja': 'PolyKern ダイアログ…'
 		})
 
 	@objc.python_method
 	def start(self):  # STUFF TO UPON GLYPHS STARTUP
-		submenu = NSMenu.alloc().initWithTitle_('BubbleKern')
+		# BEFORE ANYTHING READS A PREFERENCE. This plugin was called BubbleKern
+		# and everything it remembers was saved under that name; the first
+		# launch under the new one brings it over. Runs once, and says so in
+		# the log when it moved anything.
+		try:
+			moved = PKAutoBubble.migrate_preferences()
+			if moved:
+				PKCommonLogic.log(f'carried {moved} preferences over from BubbleKern')
+		except Exception:
+			PKCommonLogic.log(f'preference migration failed: {traceback.format_exc()}',
+				error=True)
+		submenu = NSMenu.alloc().initWithTitle_('PolyKern')
 		for title, action in (
 			(self.name, self.showWindow_),
-			('BubbleKern Settings…', self.openSettings_),
+			('PolyKern Settings…', self.openSettings_),
 		):
 			item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, '')
 			item.setTarget_(self)
@@ -110,7 +121,7 @@ class BubbleKernKerner(GeneralPlugin):
 		everyMaster.setAlternate_(True)
 		submenu.addItem_(everyMaster)
 
-		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('BubbleKern', None, '')
+		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('PolyKern', None, '')
 		parent.setSubmenu_(submenu)
 		Glyphs.menu[EDIT_MENU].append(parent)
 		self.registerParameterSheet()
@@ -121,29 +132,29 @@ class BubbleKernKerner(GeneralPlugin):
 		# by hand for anyone who prefers that.
 		try:
 			from GlyphsApp import GSCallbackHandler
-			import BKAutoBubble
-			import BKParameterSheet
+			import PKAutoBubble
+			import PKParameterSheet
 			GSCallbackHandler.addCustomParameterSheetController_forParameter_(
-				BKParameterSheet.BubbleKernParameterSheet,
-				BKAutoBubble.SETTINGS_PARAMETER)
+				PKParameterSheet.PolyKernParameterSheet,
+				PKAutoBubble.SETTINGS_PARAMETER)
 		except Exception:
-			BKCommonLogic.log(
-				f'BubbleKern parameter sheet not registered: {traceback.format_exc()}',
+			PKCommonLogic.log(
+				f'PolyKern parameter sheet not registered: {traceback.format_exc()}',
 				error=True)
 
 	def openSettings_(self, sender):
 		# The window belongs to the TOOL, which Glyphs instantiates at launch
 		# alongside this one - both are principal classes of the same bundle.
 		try:
-			import BKTool
-			if BKTool.mainDrawingHandler is None:
-				BKCommonLogic.show_alert('BubbleKern Settings',
-					'The BubbleKern tool has not loaded, so its settings cannot open.',
+			import PKTool
+			if PKTool.mainDrawingHandler is None:
+				PKCommonLogic.show_alert('PolyKern Settings',
+					'The PolyKern tool has not loaded, so its settings cannot open.',
 					cancel=False)
 				return
-			BKTool.mainDrawingHandler.openSettingsWindow()
+			PKTool.mainDrawingHandler.openSettingsWindow()
 		except Exception:
-			BKCommonLogic.log(f'openSettings error: {traceback.format_exc()}', error=True)
+			PKCommonLogic.log(f'openSettings error: {traceback.format_exc()}', error=True)
 
 	def generateSelected_(self, sender):
 		self.generateBubbles(False)
@@ -155,8 +166,8 @@ class BubbleKernKerner(GeneralPlugin):
 	def generateBubbles(self, allMasters):
 		"""Auto-generate both walls for the selected glyphs."""
 		try:
-			import BKBubbleStore
-			import BKTool
+			import PKBubbleStore
+			import PKTool
 			font = Glyphs.font
 			if font is None:
 				return
@@ -176,11 +187,11 @@ class BubbleKernKerner(GeneralPlugin):
 			# this command failed outright when the tool had not been picked up
 			# yet. Only the redraw wants the tool, and only if there is one.
 			for isLeft in (True, False):
-				BKBubbleStore.autoGenerate(font, isLeft, layers=layers)
-			if BKTool.mainDrawingHandler is not None:
-				BKTool.mainDrawingHandler.refreshAfterWrite()
+				PKBubbleStore.autoGenerate(font, isLeft, layers=layers)
+			if PKTool.mainDrawingHandler is not None:
+				PKTool.mainDrawingHandler.refreshAfterWrite()
 		except Exception:
-			BKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
+			PKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def buildWindow(self):
@@ -188,8 +199,8 @@ class BubbleKernKerner(GeneralPlugin):
 		self.w = vanilla.Window(
 			(230, 500),
 			maxSize=(2000, 2000),
-			title='BubbleKern Kerner',
-			autosaveName="com.Tosche.BubbleKernKerner.mainwindow"  # stores last window position and size
+			title='PolyKern Kerner',
+			autosaveName="com.Tosche.PolyKernKerner.mainwindow"  # stores last window position and size
 		)
 
 		self.w.bind("should close", self.windowShouldClose_)
@@ -197,7 +208,7 @@ class BubbleKernKerner(GeneralPlugin):
 		windowNS = self.w.getNSWindow()
 		windowNS.setHidesOnDeactivate_(True)  # MAKE WINDOW HIDE WHILE IN BACKGROUND
 
-		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts", "Remove BubbleKern Data"])
+		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts", "Remove PolyKern Data"])
 
 		self.buildKerningTab()
 		self.buildFontTab()
@@ -229,7 +240,7 @@ class BubbleKernKerner(GeneralPlugin):
 		dropSettings = dict(
 			pasteboardTypes=[
 				"string",
-				"Tosche.BubbleKernKerner.permListIndexes"
+				"Tosche.PolyKernKerner.permListIndexes"
 			],
 			dropCandidateEnteredCallback=self.dropCandidateEnteredCallback,
 			dropCandidateCallback=self.dropCandidateCallback,
@@ -301,7 +312,7 @@ class BubbleKernKerner(GeneralPlugin):
 		# which combinations do. It narrows the preset rather than replacing
 		# it, so the rows still decide which glyphs are in scope.
 		tab0.group1.relevantOnly = vanilla.CheckBox('auto', 'Only the most relevant pairs',
-			value=bool(BKAutoBubble._pref(BKAutoBubble.PREF_RELEVANT_ONLY, False)),
+			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)),
 			callback=self.toggleRelevantOnly, sizeStyle='small')
 		tab0.group1.relevantOnly.getNSButton().setToolTip_(
 			'Kern only the pairs that occur in running text, after André '
@@ -311,13 +322,13 @@ class BubbleKernKerner(GeneralPlugin):
 		# wall does not change because the pair it kerns was written under a
 		# group name.
 		tab0.group1.writeGroups = vanilla.CheckBox('auto', 'Write groups, not pairs',
-			value=bool(BKAutoBubble._pref(BKAutoBubble.PREF_KERN_GROUPS, False)),
+			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_KERN_GROUPS, False)),
 			callback=self.toggleWriteGroups, sizeStyle='small')
 		tab0.group1.writeGroups.getNSButton().setToolTip_(
 			'Kern the groups the bubbles fall into, so one pair covers every '
 			'glyph that shares a wall')
-		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.BubbleKernMain)
-		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.BubbleKernMain)
+		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.PolyKernMain)
+		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.PolyKernMain)
 		rules = [
 			'H:|-[relevantOnly]-[writeGroups]-[progress]-[allButton(==selButton)]-[selButton]-|',
 			'V:|-(12)-[relevantOnly(18)]',
@@ -342,7 +353,7 @@ class BubbleKernKerner(GeneralPlugin):
 		tab1 = self.w.tabs[1]
 		tab1.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
 
-1. You can generate a new font with 'BBLH' table based on the BubbleKern data.
+1. You can generate a new font with 'BBLH' table based on the PolyKern data.
 (Maybe also vertical 'BBLV' table in the future)
 
 2. You need to have FontTools installed.
@@ -368,12 +379,12 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 	@objc.python_method
 	def buildRemoveTab(self):
-		"""Taking every trace of BubbleKern back out of the font."""
-		# REMOVE BUBBLEKERN TAB
+		"""Taking every trace of PolyKern back out of the font."""
+		# REMOVE POLYKERN TAB
 		tab2 = self.w.tabs[2]
 		filepath = self.font.filepath
 		fileName = '(%s)' % re.sub('.*/', '', filepath) if filepath is not None else ''
-		tab2.message = vanilla.TextBox('auto', f"Here, you can remove BubbleKern data from the font:\n\n{self.font.familyName} {fileName}")
+		tab2.message = vanilla.TextBox('auto', f"Here, you can remove PolyKern data from the font:\n\n{self.font.familyName} {fileName}")
 		tab2.button = vanilla.Button('auto', 'Remove; yes I am absolutely sure.', self.removeBubbles)
 		tab2.spacer0 = vanilla.Group('auto')
 		tab2.spacer1 = vanilla.Group('auto')
@@ -415,11 +426,11 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			# preset menu items
 			if index == presetsDicLength + 0: # new name
-				newName = BKCommonLogic.show_alert('Enter Name for new Preset.', askString=True)
+				newName = PKCommonLogic.show_alert('Enter Name for new Preset.', askString=True)
 				if not newName:
 					return
 				if newName in self.presetsDic.keys():
-					BKCommonLogic.show_alert('Duplicate name is not allowed.', cancel=False)
+					PKCommonLogic.show_alert('Duplicate name is not allowed.', cancel=False)
 					return
 				# empty names are already handled in show_alert
 				self.loadedPresetName = newName
@@ -428,7 +439,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				self.loadPreferences()
 
 			elif index == presetsDicLength + 1: # rename
-				newName = BKCommonLogic.show_alert(f'Enter New Name for the Preset: {self.loadedPresetName}', askString=True)
+				newName = PKCommonLogic.show_alert(f'Enter New Name for the Preset: {self.loadedPresetName}', askString=True)
 				if not newName:
 					return
 				self.presetsDic[newName] = self.presetsDic.pop(self.loadedPresetName) # remove and return the same dic entry
@@ -437,11 +448,11 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				self.refreshPopupButton()
 			
 			elif index == presetsDicLength + 2: # duplicate
-				newName = BKCommonLogic.show_alert(f'Enter Name for the Duplicate of Preset: {self.loadedPresetName}', askString=True)
+				newName = PKCommonLogic.show_alert(f'Enter Name for the Duplicate of Preset: {self.loadedPresetName}', askString=True)
 				if not newName:
 					return
 				if newName in self.presetsDic.keys():
-					BKCommonLogic.show_alert('Existing preset name is not allowed.', cancel=False)
+					PKCommonLogic.show_alert('Existing preset name is not allowed.', cancel=False)
 					return
 				self.presetsDic[newName] = self.presetsDic[self.loadedPresetName] # just copy the same dic entry
 				self.loadedPresetName = newName
@@ -451,10 +462,10 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			elif index == presetsDicLength + 3: # delete
 				if len(self.presetsDic) <= 1: # only one or zero preset to delete
-					BKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
+					PKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
 					self.w.tabs[0].group0.optionsPopup.set(0)
 				else:
-					deleting = BKCommonLogic.show_alert(f'Are you sure you want to delete "{self.loadedPresetName}"?')
+					deleting = PKCommonLogic.show_alert(f'Are you sure you want to delete "{self.loadedPresetName}"?')
 					if deleting:
 						self.savePreferences(option=1) # deleting
 
@@ -489,16 +500,16 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	def loadPreferences(self, sender=None):
 		try:
 			try:
-				presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"]
-			except Exception: # if old BubbleKern is being used
-				presetsDic = Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
-				del Glyphs.defaults["com.Tosche.BubbleKern.favDic"]
-				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = presetsDic
+				presetsDic = Glyphs.defaults["com.Tosche.PolyKern.presetsDic"]
+			except Exception: # if old PolyKern is being used
+				presetsDic = Glyphs.defaults["com.Tosche.PolyKern.favDic"]
+				del Glyphs.defaults["com.Tosche.PolyKern.favDic"]
+				Glyphs.defaults["com.Tosche.PolyKern.presetsDic"] = presetsDic
 
 			# I need NSMutableDictionary to modify dictionary; without it, I cannot change teh content
 			self.presetsDic = NSMutableDictionary.alloc().initWithDictionary_copyItems_(presetsDic, True)
 
-			if Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] is None:
+			if Glyphs.defaults["com.Tosche.PolyKern.presetsDic"] is None:
 				# Fallback to default preset dictionary
 				self.presetsDic = {
 					"Sample": (
@@ -525,7 +536,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					)
 				}
 
-				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
+				Glyphs.defaults["com.Tosche.PolyKern.presetsDic"] = self.presetsDic
 			else:  # presetsDic exists, but not validated
 				pass
 
@@ -561,7 +572,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			if option == 1: # deleting the selected preset
 				del self.presetsDic[self.loadedPresetName]
 				self.loadedPresetName = None
-				Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
+				Glyphs.defaults["com.Tosche.PolyKern.presetsDic"] = self.presetsDic
 				# need to load something
 				self.loadPreferences()
 			elif option == 2: # making new list
@@ -577,7 +588,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					perms.append(perm)
 				self.presetsDic[self.loadedPresetName] = perms
 
-			Glyphs.defaults["com.Tosche.BubbleKern.presetsDic"] = self.presetsDic
+			Glyphs.defaults["com.Tosche.PolyKern.presetsDic"] = self.presetsDic
 		except Exception:
 			log(f'SavePreferences error: {traceback.format_exc()}', error=True)
 
@@ -621,7 +632,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def toggleRelevantOnly(self, sender=None):
 		try:
-			Glyphs.defaults[BKAutoBubble.PREF_RELEVANT_ONLY] = bool(sender.get())
+			Glyphs.defaults[PKAutoBubble.PREF_RELEVANT_ONLY] = bool(sender.get())
 			self.refreshTotal()
 		except Exception:
 			log(f'toggleRelevantOnly error: {traceback.format_exc()}', error=True)
@@ -629,7 +640,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def toggleWriteGroups(self, sender=None):
 		try:
-			Glyphs.defaults[BKAutoBubble.PREF_KERN_GROUPS] = bool(sender.get())
+			Glyphs.defaults[PKAutoBubble.PREF_KERN_GROUPS] = bool(sender.get())
 		except Exception:
 			log(f'toggleWriteGroups error: {traceback.format_exc()}', error=True)
 
@@ -645,8 +656,8 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			font = self.font
 			if font is None:
 				return 0
-			relevant = BKAutoBubble.relevant_pair_names(
-				BKCommonLogic.namesByCharacter(font))
+			relevant = PKAutoBubble.relevant_pair_names(
+				PKCommonLogic.namesByCharacter(font))
 			pairs = set()
 			for row in permutations:
 				lefts = self.cleanUpText(row['Left'])
@@ -663,7 +674,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	def refreshTotal(self): # preview EditText
 		try:
 			permutations = self.w.tabs[0].group0.permList.get()
-			if bool(BKAutoBubble._pref(BKAutoBubble.PREF_RELEVANT_ONLY, False)):
+			if bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)):
 				totalPairs = self.relevantCount(permutations)
 			else:
 				totalPairs = sum([int(p['Pairs']) for p in permutations])
@@ -792,7 +803,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			typesAndValues = {
 				"str": permList.get()[index],
-				"Tosche.BubbleKernKerner.permListIndexes": indexes
+				"Tosche.PolyKernKerner.permListIndexes": indexes
 			}
 			return typesAndValues
 		except Exception:
@@ -822,7 +833,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			# reorder
 			if source == permList:
 				# indexes = original indexes of items being carried.
-				indexes = sender.getDropItemValues(items, "Tosche.BubbleKernKerner.permListIndexes")[0]
+				indexes = sender.getDropItemValues(items, "Tosche.PolyKernKerner.permListIndexes")[0]
 				if endIndex > indexes[0]:
 					endIndex -= 1
 				listItems = list(permList.get())
@@ -872,7 +883,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			log(f'delButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def BubbleKernMain(self, sender):  # generate kerning
+	def PolyKernMain(self, sender):  # generate kerning
 		try:
 			self.font.disableUpdateInterface()
 
@@ -881,7 +892,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			self.w.tabs[0].group1.progress.set(0)
 			self.w.tabs[0].group1.progress.show(True)
 
-			for progress in BKCommonLogic.kernOpenType(presetName=self.loadedPresetName, selectedLayersOnly=selGlyphs):
+			for progress in PKCommonLogic.kernOpenType(presetName=self.loadedPresetName, selectedLayersOnly=selGlyphs):
 
 				self.w.tabs[0].group1.progress.set(progress)
 
@@ -890,7 +901,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 			self.font.enableUpdateInterface()
 		except Exception:
-			log(f'BubbleKernMain error: {traceback.format_exc()}', error=True)
+			log(f'PolyKernMain error: {traceback.format_exc()}', error=True)
 
 	def interpolateLayer_glyph_interpolation_error_(self, layer: GSLayer, glyph: GSGlyph, interpolation: dict, error: Any):
 		pass
@@ -919,7 +930,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		folderPath = GetFolder(message="Select a saving location.")
 
 		if folderPath:
-			exportedPaths = BKExport.writeFontWithBBLH(folderPath, self.font)
+			exportedPaths = PKExport.writeFontWithBBLH(folderPath, self.font)
 			if exportedPaths:
 				self.w.hide()
 				urls = [NSURL.fileURLWithPath_(p) for p in exportedPaths]
@@ -935,16 +946,16 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	def removeBubbles(self, sender):
 		try:
 			self.font
-			del self.font.userData['useBubbleKern']
+			del self.font.userData['usePolyKern']
 			try:
-				del self.font.tempData['useBubbleKern']
+				del self.font.tempData['usePolyKern']
 			except Exception:
 				pass
 
 			keys = (
-				'BubbleKernExportL', 'BubbleKernExportR',
-				'BubbleKernReferL', 'BubbleKernReferR',
-				'BubbleKernNodesL', 'BubbleKernNodesR'
+				'PolyKernExportL', 'PolyKernExportR',
+				'PolyKernReferL', 'PolyKernReferR',
+				'PolyKernNodesL', 'PolyKernNodesR'
 			)
 			for g in self.font.glyphs:
 				for gl in g.layers:

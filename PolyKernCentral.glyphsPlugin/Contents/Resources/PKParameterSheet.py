@@ -1,4 +1,4 @@
-"""The Font Info editor for the `BubbleKern` parameter.
+"""The Font Info editor for the `PolyKern` parameter.
 
 Glyphs lets a plugin own the UI for a custom parameter: register a window
 controller with `GSCallbackHandler.addCustomParameterSheetController:forParameter:`
@@ -21,10 +21,10 @@ import vanilla
 from AppKit import (NSApp, NSFocusRingTypeNone, NSModalResponseOK,
 	NSWindowController)
 
-import BKAutoBubble as auto
-from BKCommonLogic import log
+import PKAutoBubble as auto
+from PKCommonLogic import log
 
-PARAMETER_TITLE = 'BubbleKern settings'
+PARAMETER_TITLE = 'PolyKern settings'
 # WHAT `setCustomParameters:error:` HANDS BACK. The SDK sample calls it a BOOL
 # and returns YES; Glyphs reads it as three states, and YES is the one that
 # means "handled, show nothing" - so the sheet never opened and the parameter
@@ -36,7 +36,7 @@ SHOW_THE_DIALOG = 0
 _open = set()
 
 
-class BubbleKernParameterSheet(NSWindowController):
+class PolyKernParameterSheet(NSWindowController):
 
 	def init(self):
 		try:
@@ -70,11 +70,11 @@ class BubbleKernParameterSheet(NSWindowController):
 				view = (control.getNSTextField() if hasattr(control, 'getNSTextField')
 					else control.getNSButton())
 				view.setFocusRingType_(NSFocusRingTypeNone)
-			self = objc.super(BubbleKernParameterSheet, self).initWithWindow_(
+			self = objc.super(PolyKernParameterSheet, self).initWithWindow_(
 				panel.getNSWindow())
 			return self
 		except Exception:
-			log(f'BubbleKern parameter sheet: {traceback.format_exc()}', error=True)
+			log(f'PolyKern parameter sheet: {traceback.format_exc()}', error=True)
 			return None
 
 	# --- What Glyphs calls ------------------------------------------------
@@ -99,7 +99,7 @@ class BubbleKernParameterSheet(NSWindowController):
 			self.blank = self.blank or not self.parameters
 			return SHOW_THE_DIALOG
 		except Exception:
-			log(f'BubbleKern parameter sheet: {traceback.format_exc()}', error=True)
+			log(f'PolyKern parameter sheet: {traceback.format_exc()}', error=True)
 			return SHOW_THE_DIALOG
 
 	setCustomParameters_error_ = objc.selector(
@@ -116,7 +116,7 @@ class BubbleKernParameterSheet(NSWindowController):
 			_open.add(self)
 			own = self.window()
 			if own is None:
-				log('BubbleKern parameter sheet: no window to show', error=True)
+				log('PolyKern parameter sheet: no window to show', error=True)
 				return
 			host = window or NSApp().keyWindow() or NSApp().mainWindow()
 			if host is not None and host is not own:
@@ -126,7 +126,7 @@ class BubbleKernParameterSheet(NSWindowController):
 				self.showWindow_(sender)
 				own.makeKeyAndOrderFront_(sender)
 		except Exception:
-			log(f'BubbleKern parameter sheet: {traceback.format_exc()}', error=True)
+			log(f'PolyKern parameter sheet: {traceback.format_exc()}', error=True)
 
 	# --- The controls -----------------------------------------------------
 
@@ -157,7 +157,7 @@ class BubbleKernParameterSheet(NSWindowController):
 				settings.update(chosen)
 				parameter.value = auto.format_settings(settings)
 		except Exception:
-			log(f'BubbleKern parameter sheet: {traceback.format_exc()}', error=True)
+			log(f'PolyKern parameter sheet: {traceback.format_exc()}', error=True)
 		self.dismiss(NSModalResponseOK)
 
 	@objc.python_method
@@ -171,5 +171,5 @@ class BubbleKernParameterSheet(NSWindowController):
 				parent.endSheet_returnCode_(window, code)
 			window.orderOut_(None)
 		except Exception:
-			log(f'BubbleKern parameter sheet: {traceback.format_exc()}', error=True)
+			log(f'PolyKern parameter sheet: {traceback.format_exc()}', error=True)
 		_open.discard(self)

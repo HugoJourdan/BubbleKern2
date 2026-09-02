@@ -22,22 +22,22 @@ import sys
 import pytest
 from Foundation import NSMakeRect
 
-RESOURCES = (pathlib.Path(__file__).parent.parent / 'BubbleKernCentral.glyphsPlugin'
+RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
 		/ 'Contents' / 'Resources')
 
 
 def _load(name):
 	if str(RESOURCES) not in sys.path:
 		sys.path.insert(0, str(RESOURCES))
-	spec = importlib.util.spec_from_file_location('bk_' + name, RESOURCES / (name + '.py'))
+	spec = importlib.util.spec_from_file_location('pk_' + name, RESOURCES / (name + '.py'))
 	module = importlib.util.module_from_spec(spec)
-	sys.modules['bk_' + name] = module
+	sys.modules['pk_' + name] = module
 	spec.loader.exec_module(module)
 	return module
 
 
-store = _load('BKBubbleStore')
-logic = _load('BKCommonLogic')
+store = _load('PKBubbleStore')
+logic = _load('PKCommonLogic')
 LEFT, RIGHT = store.LEFT, store.RIGHT
 
 
@@ -184,7 +184,7 @@ def test_a_spacing_move_rewrites_only_its_own_side(side):
 def test_no_writer_invents_a_key_outside_the_known_six():
 	"""Whatever gets written, it is one of the six concepts the format has."""
 	concepts = ('Nodes', 'Refer', 'Mirror', 'Box', 'Auto', 'Export')
-	allowed = {f'BubbleKern{concept}{letter}'
+	allowed = {f'PolyKern{concept}{letter}'
 			for concept in concepts for letter in 'LR'}
 	touched = set()
 	for one in (LEFT, RIGHT):

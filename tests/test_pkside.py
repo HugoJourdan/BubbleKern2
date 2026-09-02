@@ -14,21 +14,21 @@ import importlib.util
 import pathlib
 import sys
 
-RESOURCES = (pathlib.Path(__file__).parent.parent / 'BubbleKernCentral.glyphsPlugin'
+RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
 		/ 'Contents' / 'Resources')
 
 
 def _load(name):
 	if str(RESOURCES) not in sys.path:
 		sys.path.insert(0, str(RESOURCES))
-	spec = importlib.util.spec_from_file_location('bk_' + name, RESOURCES / (name + '.py'))
+	spec = importlib.util.spec_from_file_location('pk_' + name, RESOURCES / (name + '.py'))
 	module = importlib.util.module_from_spec(spec)
-	sys.modules['bk_' + name] = module
+	sys.modules['pk_' + name] = module
 	spec.loader.exec_module(module)
 	return module
 
 
-side_module = _load('BKSide')
+side_module = _load('PKSide')
 LEFT, RIGHT = side_module.LEFT, side_module.RIGHT
 
 
@@ -36,18 +36,18 @@ LEFT, RIGHT = side_module.LEFT, side_module.RIGHT
 
 
 def test_every_key_the_file_format_has():
-	assert LEFT.key('Nodes') == 'BubbleKernNodesL'
-	assert RIGHT.key('Nodes') == 'BubbleKernNodesR'
-	assert LEFT.key('Refer') == 'BubbleKernReferL'
-	assert RIGHT.key('Refer') == 'BubbleKernReferR'
-	assert LEFT.key('Mirror') == 'BubbleKernMirrorL'
-	assert RIGHT.key('Mirror') == 'BubbleKernMirrorR'
-	assert LEFT.key('Box') == 'BubbleKernBoxL'
-	assert RIGHT.key('Box') == 'BubbleKernBoxR'
-	assert LEFT.key('Auto') == 'BubbleKernAutoL'
-	assert RIGHT.key('Auto') == 'BubbleKernAutoR'
-	assert LEFT.key('Export') == 'BubbleKernExportL'
-	assert RIGHT.key('Export') == 'BubbleKernExportR'
+	assert LEFT.key('Nodes') == 'PolyKernNodesL'
+	assert RIGHT.key('Nodes') == 'PolyKernNodesR'
+	assert LEFT.key('Refer') == 'PolyKernReferL'
+	assert RIGHT.key('Refer') == 'PolyKernReferR'
+	assert LEFT.key('Mirror') == 'PolyKernMirrorL'
+	assert RIGHT.key('Mirror') == 'PolyKernMirrorR'
+	assert LEFT.key('Box') == 'PolyKernBoxL'
+	assert RIGHT.key('Box') == 'PolyKernBoxR'
+	assert LEFT.key('Auto') == 'PolyKernAutoL'
+	assert RIGHT.key('Auto') == 'PolyKernAutoR'
+	assert LEFT.key('Export') == 'PolyKernExportL'
+	assert RIGHT.key('Export') == 'PolyKernExportR'
 
 
 def test_a_key_is_a_plain_string():
@@ -62,9 +62,9 @@ def test_the_key_is_what_hand_written_concatenation_produced():
 	# The forty-two sites this replaces all did one of these three.
 	for side in (LEFT, RIGHT):
 		for concept in ('Nodes', 'Refer', 'Mirror', 'Box', 'Auto', 'Export'):
-			assert side.key(concept) == 'BubbleKern' + concept + side
-			assert side.key(concept) == f'BubbleKern{concept}{side}'
-			assert side.key(concept) == ('BubbleKern' + concept
+			assert side.key(concept) == 'PolyKern' + concept + side
+			assert side.key(concept) == f'PolyKern{concept}{side}'
+			assert side.key(concept) == ('PolyKern' + concept
 					+ ('L' if side.isLeft else 'R'))
 
 
@@ -78,8 +78,8 @@ def test_a_side_is_its_own_letter():
 	assert RIGHT == 'R'
 	assert str(LEFT) == 'L'
 	assert f'{RIGHT}' == 'R'
-	assert 'BubbleKernNodes' + LEFT == 'BubbleKernNodesL'
-	assert {'L': 1, 'R': 2}[RIGHT] == 2       # dict lookup, as BKAutoBubble does
+	assert 'PolyKernNodes' + LEFT == 'PolyKernNodesL'
+	assert {'L': 1, 'R': 2}[RIGHT] == 2       # dict lookup, as PKAutoBubble does
 	assert sorted((RIGHT, LEFT)) == ['L', 'R']
 
 

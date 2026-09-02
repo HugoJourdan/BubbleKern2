@@ -24,7 +24,7 @@ from Cocoa import (
 	NSView,
 )
 
-from BKCommonLogic import log
+from PKCommonLogic import log
 
 
 

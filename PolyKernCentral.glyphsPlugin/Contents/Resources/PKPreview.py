@@ -29,9 +29,9 @@ from Cocoa import (
 	NSView,
 )
 
-import BKAutoBubble as auto
-from BKCommonLogic import getKernValue, log
-from BKSide import SIDES
+import PKAutoBubble as auto
+from PKCommonLogic import getKernValue, log
+from PKSide import SIDES
 
 
 PREVIEW_TEXT = 'AVoTnoun'  # a diagonal, a flat pair and a round one
@@ -361,7 +361,7 @@ def drawPreviewLine(line, originX, originY, scale, top, bottom,
 		lastRight = centre + width / 2.0
 
 
-class BubbleKernPreviewView(NSView):
+class PolyKernPreviewView(NSView):
 
 	def drawRect_(self, rect):
 		# Under THIS VIEW'S appearance, not the app's: a semantic colour asked

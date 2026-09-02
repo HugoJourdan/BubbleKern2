@@ -14,21 +14,21 @@ import sys
 import pytest
 from Foundation import NSMakeRect, NSPoint
 
-RESOURCES = (pathlib.Path(__file__).parent.parent / 'BubbleKernCentral.glyphsPlugin'
+RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
 		/ 'Contents' / 'Resources')
 
 
 def _load(name):
 	if str(RESOURCES) not in sys.path:
 		sys.path.insert(0, str(RESOURCES))
-	spec = importlib.util.spec_from_file_location('bk_' + name, RESOURCES / (name + '.py'))
+	spec = importlib.util.spec_from_file_location('pk_' + name, RESOURCES / (name + '.py'))
 	module = importlib.util.module_from_spec(spec)
-	sys.modules['bk_' + name] = module
+	sys.modules['pk_' + name] = module
 	spec.loader.exec_module(module)
 	return module
 
 
-tool_module = _load('BKTool')
+tool_module = _load('PKTool')
 preview_module = tool_module.preview  # the same object the plugin drew with
 store_module = tool_module.store  # likewise for what writes the bubbles
 from GlyphsApp import GSLayer  # the conftest stub, after it has been installed
@@ -79,9 +79,9 @@ class Layer(GSLayer):
 		self.bounds = NSMakeRect(0, 0, width, 700)
 		self.master = MASTER
 		if nodesL is not None:
-			self.userData['BubbleKernNodesL'] = nodesL
+			self.userData['PolyKernNodesL'] = nodesL
 		if nodesR is not None:
-			self.userData['BubbleKernNodesR'] = nodesR
+			self.userData['PolyKernNodesR'] = nodesR
 		self.parent = Glyph(name, self)
 
 	def font(self):
@@ -103,7 +103,7 @@ class Component:
 def tool():
 	# NO __init__: it builds a window. Every method under test is a plain
 	# python_method that never reaches for one.
-	return tool_module.BubbleKernTool.__new__(tool_module.BubbleKernTool)
+	return tool_module.PolyKernTool.__new__(tool_module.PolyKernTool)
 
 
 @pytest.fixture
@@ -121,32 +121,32 @@ def oh():
 
 def test_a_composite_is_left_to_its_components(oh):
 	o, accent, ocirc = oh
-	ocirc.userData['BubbleKernNodesL'] = [(0, -16), (0, 700)]
+	ocirc.userData['PolyKernNodesL'] = [(0, -16), (0, 700)]
 	assert store_module.mergeFromComponents(ocirc, store_module.LEFT) is True
-	assert not ocirc.userData['BubbleKernNodesL'], 'the wall in the way is gone'
+	assert not ocirc.userData['PolyKernNodesL'], 'the wall in the way is gone'
 	assert ocirc.parent.undo == 0, 'opened and closed'
 
 
 def test_a_glyph_that_draws_its_own_ink_is_never_cleared(oh):
 	o, accent, ocirc = oh
 	assert store_module.mergeFromComponents(o, store_module.LEFT) is False
-	assert o.userData['BubbleKernNodesL'] == O_L
+	assert o.userData['PolyKernNodesL'] == O_L
 
 
 def test_a_composite_with_nothing_to_borrow_is_drawn_after_all(oh):
 	"""Both components carry the default line, so the merge would be a line on
 	the origin - no wall at all. Better to generate one."""
 	o, accent, ocirc = oh
-	o.userData['BubbleKernNodesL'] = [(0, -16), (0, 524)]
-	accent.userData['BubbleKernNodesL'] = [(0, 571), (0, 700)]
+	o.userData['PolyKernNodesL'] = [(0, -16), (0, 524)]
+	accent.userData['PolyKernNodesL'] = [(0, 571), (0, 700)]
 	assert store_module.mergeFromComponents(ocirc, store_module.LEFT) is False
 
 
 def test_a_side_pointed_somewhere_by_hand_is_left_alone(oh):
 	o, accent, ocirc = oh
-	ocirc.userData['BubbleKernReferL'] = 'e'
+	ocirc.userData['PolyKernReferL'] = 'e'
 	assert store_module.mergeFromComponents(ocirc, store_module.LEFT) is False
-	assert ocirc.userData['BubbleKernReferL'] == 'e'
+	assert ocirc.userData['PolyKernReferL'] == 'e'
 
 
 # --- The handles put on a borrowing layer ----------------------------------
@@ -168,7 +168,7 @@ def test_the_borrowed_handles_are_dropped_when_the_component_moves(tool, oh):
 	touch, so nothing here said the handles had gone out of date."""
 	o, accent, ocirc = oh
 	tool.loadNodesFromLayer(ocirc)
-	accent.userData['BubbleKernNodesL'] = [(40, 571), (160, 700)]
+	accent.userData['PolyKernNodesL'] = [(40, 571), (160, 700)]
 	assert wall_of(tool.loadNodesFromLayer(ocirc))[-2:] == [(114, 571), (234, 700)]
 
 
@@ -187,9 +187,9 @@ def test_an_untouched_composite_is_not_written_down(tool, oh):
 	components happened to look like."""
 	o, accent, ocirc = oh
 	tool.loadNodesFromLayer(ocirc)
-	accent.userData['BubbleKernNodesL'] = [(40, 571), (160, 700)]  # moved since
+	accent.userData['PolyKernNodesL'] = [(40, 571), (160, 700)]  # moved since
 	tool.saveNodesToLayer(ocirc)
-	assert not ocirc.userData['BubbleKernNodesL'], 'still borrowing'
+	assert not ocirc.userData['PolyKernNodesL'], 'still borrowing'
 
 
 def test_a_composite_somebody_dragged_keeps_what_was_dragged(tool, oh):
@@ -197,7 +197,7 @@ def test_a_composite_somebody_dragged_keeps_what_was_dragged(tool, oh):
 	bubbles = tool.loadNodesFromLayer(ocirc)
 	bubbles['nodesL'][-1].pos = NSPoint(300, 700)
 	tool.saveNodesToLayer(ocirc)
-	stored = ocirc.userData['BubbleKernNodesL']
+	stored = ocirc.userData['PolyKernNodesL']
 	assert stored and tuple(stored[-1]) == (300, 700)
 
 
@@ -208,8 +208,8 @@ def test_a_mirrored_side_does_not_fight_a_drag_on_the_other_one(tool, oh):
 	what a drag is moving. Counted as borrowed it went out of date on the first
 	pixel of every drag and took the drag with it."""
 	o, accent, ocirc = oh
-	del accent.userData['BubbleKernNodesR']
-	accent.userData['BubbleKernMirrorR'] = 1
+	del accent.userData['PolyKernNodesR']
+	accent.userData['PolyKernMirrorR'] = 1
 	bubbles = tool.loadNodesFromLayer(accent)
 	bubbles['nodesL'][0].pos = NSPoint(40, 571)
 	assert wall_of(tool.loadNodesFromLayer(accent))[0] == (40, 571)
@@ -260,7 +260,7 @@ def test_typing_a_coordinate_moves_the_node(tool, oh):
 	handle = bubbles['nodesL'][0]
 	accent.selection = [handle]
 	assert tool.moveBubbleNodeTo(accent, handle, False, 40, 571) is True
-	assert [tuple(n) for n in accent.userData['BubbleKernNodesL']] == [
+	assert [tuple(n) for n in accent.userData['PolyKernNodesL']] == [
 			(40, 571), (121, 700)]
 	# TYPING THE SAME NUMBERS AGAIN IS NOT AN EDIT: no undo step, no write.
 	assert tool.moveBubbleNodeTo(accent, handle, False, 40, 571) is False
@@ -273,7 +273,7 @@ def test_a_node_typed_past_its_neighbour_lands_in_order(tool, oh):
 	handle = bubbles['nodesL'][0]
 	accent.selection = [handle]
 	tool.moveBubbleNodeTo(accent, handle, False, 40, 900)
-	stored = [tuple(n) for n in accent.userData['BubbleKernNodesL']]
+	stored = [tuple(n) for n in accent.userData['PolyKernNodesL']]
 	assert stored == [(121, 700), (40, 900)]
 
 
@@ -287,7 +287,7 @@ def test_the_coordinate_strip_is_shaped_like_the_one_glyphs_draws():
 	the whole of what was wrong with this and is invisible in a screenshot
 	until it is stood next to the box it is copying.
 	"""
-	tool = tool_module.BubbleKernTool.__new__(tool_module.BubbleKernTool)
+	tool = tool_module.PolyKernTool.__new__(tool_module.PolyKernTool)
 	tool.settings()
 	view = tool.coordsView
 	view.layoutSubtreeIfNeeded()

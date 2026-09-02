@@ -11,7 +11,7 @@ import traceback
 
 from AppKit import NSBezierPath
 
-from BKCommonLogic import getFinalBubble, log, show_alert
+from PKCommonLogic import getFinalBubble, log, show_alert
 
 
 
@@ -44,7 +44,7 @@ def _normalize_nodes_for_export(rawNodes:NSBezierPath, isRight:bool=True, width:
 
 def collectBBLHData(font=None, masterId=None) -> dict:
 	"""
-	Collect BubbleKern node data for a master and return it as:
+	Collect PolyKern node data for a master and return it as:
 	{
 		"A": [[(x, y), ...], [(x, y), ...]],
 		"B": [[...], [...]],
@@ -78,7 +78,7 @@ def collectBBLHData(font=None, masterId=None) -> dict:
 
 
 
-# to be run from BKKerner
+# to be run from PKKerner
 def writeFontWithBBLH(folderPath, font=None): # want to use this name later
 	"""
 	Add BBLH table to a font.

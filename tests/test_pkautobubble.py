@@ -20,7 +20,7 @@ import pytest
 
 MODULE_PATH = (
     pathlib.Path(__file__).parent.parent
-    / "BubbleKernCentral.glyphsPlugin/Contents/Resources/BKAutoBubble.py"
+    / "PolyKernCentral.glyphsPlugin/Contents/Resources/PKAutoBubble.py"
 )
 
 
@@ -32,13 +32,13 @@ def _load(name, path):
     return module
 
 
-# UNDER ITS REAL NAME, so `BKAutoBubble` finds it by a plain import - and by
-# sys.modules rather than sys.path, which would also put `BKCommonLogic` in
+# UNDER ITS REAL NAME, so `PKAutoBubble` finds it by a plain import - and by
+# sys.modules rather than sys.path, which would also put `PKCommonLogic` in
 # reach and swap this module's no-op `log` for one that writes to the Desktop.
-_load("BKSide", MODULE_PATH.parent / "BKSide.py")
-bk = _load("bk_auto_bubble", MODULE_PATH)
+_load("PKSide", MODULE_PATH.parent / "PKSide.py")
+pk = _load("pk_auto_bubble", MODULE_PATH)
 
-LEFT, RIGHT = bk.LEFT, bk.RIGHT
+LEFT, RIGHT = pk.LEFT, pk.RIGHT
 
 
 def flat(rows, value):
@@ -47,7 +47,7 @@ def flat(rows, value):
 
 # One row's worth of recession at the wall's own slope, which is what every
 # cone assertion below is measured in.
-RISE = bk.WALL_SLOPE * 10
+RISE = pk.WALL_SLOPE * 10
 
 
 def wall_at(wall):
@@ -61,7 +61,7 @@ def wall_at(wall):
 def test_a_straight_side_gives_a_straight_wall_one_gap_out():
     """A stem is its sidebearing at every row, so its wall is a straight line
     that far out and no further."""
-    wall = wall_at(bk.bubble_wall(flat(range(0, 10), 30.0), 10, 25.0, 0, 95, 500))
+    wall = wall_at(pk.bubble_wall(flat(range(0, 10), 30.0), 10, 25.0, 0, 95, 500))
     assert {wall[(row + 0.5) * 10] for row in range(0, 10)} == {5.0}
 
 
@@ -70,7 +70,7 @@ def test_the_wall_opens_where_the_ink_recedes():
     wall has to follow the recession or nothing can tuck under the arm."""
     profile = dict(flat(range(0, 5), 200.0))   # stem, deeply recessed
     profile.update(flat(range(5, 10), 20.0))   # arm, out at the edge
-    wall = wall_at(bk.bubble_wall(profile, 10, 0.0, 0, 95, 1000))
+    wall = wall_at(pk.bubble_wall(profile, 10, 0.0, 0, 95, 1000))
     assert wall[95] == pytest.approx(20.0)             # out at the arm
     assert wall[5] == pytest.approx(20.0 + RISE * 5)   # and back at the stem
     # Not the stem's own 200: a neighbour cannot reach into a recession at an
@@ -81,7 +81,7 @@ def test_the_wall_opens_where_the_ink_recedes():
 def test_the_wall_recedes_along_the_cone_past_the_ink():
     """Nothing is drawn below the baseline of an `o`, but a descender coming
     up at it still meets something - the cone, not a cliff."""
-    wall = wall_at(bk.bubble_wall(flat(range(0, 10), 30.0), 10, 0.0, -100, 95, 5000))
+    wall = wall_at(pk.bubble_wall(flat(range(0, 10), 30.0), 10, 0.0, -100, 95, 5000))
     assert wall[5] == pytest.approx(30.0)
     assert wall[-5] == pytest.approx(30.0 + RISE)     # one row down, one rise
     assert wall[-95] == pytest.approx(30.0 + RISE * 10)
@@ -94,13 +94,13 @@ def test_a_hole_inside_the_band_does_not_blow_the_wall_open():
     """
     profile = dict(flat(range(0, 4), 40.0))
     profile.update(flat(range(8, 12), 40.0))
-    wall = wall_at(bk.bubble_wall(profile, 10, 0.0, 0, 115, 5000))
+    wall = wall_at(pk.bubble_wall(profile, 10, 0.0, 0, 115, 5000))
     assert wall[55] == pytest.approx(40.0 + RISE * 2)   # two rows from a bar
     assert wall[55] < 100                                # not off in the weeds
 
 
 def test_the_wall_clamps_at_max_depth():
-    wall = wall_at(bk.bubble_wall(flat(range(0, 10), 900.0), 10, 0.0, 0, 95, 250))
+    wall = wall_at(pk.bubble_wall(flat(range(0, 10), 900.0), 10, 0.0, 0, 95, 250))
     assert set(wall.values()) == {250.0}
 
 
@@ -110,15 +110,15 @@ def test_the_two_sides_are_one_wall_negated():
     profile = flat(range(0, 10), 30.0)
     common = dict(step=10, gap=25.0, low_y=0, high_y=95, width=500,
                   tolerance=1.0, max_nodes=12)
-    left = bk.nodes_from_profile(profile, LEFT, **common)
-    right = bk.nodes_from_profile(profile, RIGHT, **common)
+    left = pk.nodes_from_profile(profile, LEFT, **common)
+    right = pk.nodes_from_profile(profile, RIGHT, **common)
     assert [(-x, y) for x, y in left] == right
 
 
 def test_a_wall_stays_inside_the_advance_while_the_ink_does():
     """A glyph spaced tighter than the gap would put `depth - gap` outside its
     own sidebearing, claiming whitespace it has not been given."""
-    wall = bk.bubble_wall(flat(range(0, 10), 20.0), 10, gap=60.0,
+    wall = pk.bubble_wall(flat(range(0, 10), 20.0), 10, gap=60.0,
                           low_y=0, high_y=95, max_depth=500)
     assert all(x >= 0 for x, _ in wall)
 
@@ -130,7 +130,7 @@ def test_a_wall_follows_ink_that_has_left_the_advance():
     see the part of it that reaches furthest."""
     profile = dict(flat(range(0, 5), 20.0))     # the body, inside the advance
     profile.update(flat(range(5, 10), -30.0))   # the hook, 30 units past it
-    wall = bk.bubble_wall(profile, 10, gap=60.0,
+    wall = pk.bubble_wall(profile, 10, gap=60.0,
                           low_y=0, high_y=95, max_depth=500)
     depths = [x for x, _ in wall]
     assert min(depths) == pytest.approx(-30.0)  # out to the ink, and no further
@@ -141,27 +141,27 @@ def test_nodes_never_end_up_on_top_of_each_other():
     """A pair four units apart is a node's worth of cost for none of a node's
     worth of shape: nothing in the kerning can see four units, and nobody
     editing the wall by hand can grab one of them without grabbing the other."""
-    gap = 1000 * bk.MIN_GAP_EM                  # 10 units at 1000 upm
+    gap = 1000 * pk.MIN_GAP_EM                  # 10 units at 1000 upm
     crowded = [(-13, -60), (-13, -16), (-13, -12), (-20, 40), (-13, 120)]
-    thinned = bk.drop_crowded(crowded, gap)
+    thinned = pk.drop_crowded(crowded, gap)
     assert (-13, -12) not in thinned            # the one that crowded its neighbour
     assert all(math.hypot(a[0] - b[0], a[1] - b[1]) >= gap
                for a, b in zip(thinned, thinned[1:]))
     # THE ENDS ARE NOT NEGOTIABLE: they are the extent of the wall, and a wall
     # stopping short of its own extent reports whitespace the glyph has not got.
     assert thinned[0] == crowded[0] and thinned[-1] == crowded[-1]
-    assert bk.drop_crowded([(-13, 0), (-13, 4), (-13, 8)], gap) == [(-13, 0), (-13, 8)]
+    assert pk.drop_crowded([(-13, 0), (-13, 4), (-13, 8)], gap) == [(-13, 0), (-13, 8)]
 
 
 def test_a_wall_with_room_between_its_nodes_is_left_alone():
     roomy = [(-13, 0), (-13, 50), (-13, 100)]
-    assert bk.drop_crowded(roomy, 1000 * bk.MIN_GAP_EM) == roomy
+    assert pk.drop_crowded(roomy, 1000 * pk.MIN_GAP_EM) == roomy
 
 
 def test_the_relevant_pair_table_is_pairs():
     """Shipped beside the module, so a bad read is a silent empty kerner
     rather than a crash - which makes it worth asserting it is really here."""
-    pairs = bk.relevant_pairs()
+    pairs = pk.relevant_pairs()
     assert len(pairs) > 3000
     assert all(isinstance(pair, str) and len(pair) == 2 for pair in pairs)
     assert pairs[0] != pairs[-1]              # ranked, not a set that got sorted
@@ -169,7 +169,7 @@ def test_the_relevant_pair_table_is_pairs():
 
 def test_relevant_pairs_are_named_by_what_the_font_can_spell():
     names = {"A": "A", "V": "V", "T": "T", " ": "space"}
-    found = bk.relevant_pair_names(names)
+    found = pk.relevant_pair_names(names)
     assert ("A", "V") in found
     # THE FONT DECIDES: nothing is invented for a character it cannot draw.
     assert all(left in names.values() and right in names.values()
@@ -180,8 +180,8 @@ def test_relevant_pairs_are_named_by_what_the_font_can_spell():
 def test_the_limit_takes_the_top_of_the_ranking():
     names = {chr(code): chr(code) for code in range(0x20, 0x7f)}
     names.update({character: character for character in "ËëÄÖÜáéíóú"})
-    everything = bk.relevant_pair_names(names)
-    top = bk.relevant_pair_names(names, limit=50)
+    everything = pk.relevant_pair_names(names)
+    top = pk.relevant_pair_names(names, limit=50)
     assert 0 < len(top) < len(everything)
     assert top <= everything
 
@@ -193,8 +193,8 @@ def test_the_inset_cap_bounds_how_deep_a_wall_goes():
     # 5 units of recession per row is well inside the turn the wall is allowed,
     # so the slope never binds here and the cap is the only thing that does.
     diagonal = {row: float(row * 5) for row in range(0, 40)}
-    uncapped = bk.bubble_wall(diagonal, 10, 0.0, 0, 395, 5000)
-    capped = bk.bubble_wall(diagonal, 10, 0.0, 0, 395, 5000, max_inset=85.0)
+    uncapped = pk.bubble_wall(diagonal, 10, 0.0, 0, 395, 5000)
+    capped = pk.bubble_wall(diagonal, 10, 0.0, 0, 395, 5000, max_inset=85.0)
     assert max(x for x, _ in uncapped) == pytest.approx(195.0)
     assert max(x for x, _ in capped) == pytest.approx(85.0)
     assert min(x for x, _ in capped) >= 0
@@ -212,13 +212,13 @@ def test_the_default_gap_is_the_layer_s_larger_sidebearing():
     rows = [(row + 0.5) * 10 for row in range(0, 10)]
 
     def kern(right_of_a, left_of_b, gap_a, gap_b):
-        right = wall_at(bk.bubble_wall(right_of_a, 10, gap_a, 0, 95, 500, slope=100.0))
-        left = wall_at(bk.bubble_wall(left_of_b, 10, gap_b, 0, 95, 500, slope=100.0))
+        right = wall_at(pk.bubble_wall(right_of_a, 10, gap_a, 0, 95, 500, slope=100.0))
+        left = wall_at(pk.bubble_wall(left_of_b, 10, gap_b, 0, 95, 500, slope=100.0))
         return -min(left[y] + right[y] for y in rows)
 
     for sidebearing in (12.0, 45.0, 120.0):  # spaced nothing like each other
         flat_side = flat(range(0, 10), sidebearing)
-        gap = bk.layer_gap({bk.LEFT: flat_side, bk.RIGHT: flat_side})
+        gap = pk.layer_gap({pk.LEFT: flat_side, pk.RIGHT: flat_side})
         assert gap == sidebearing
         assert kern(flat_side, flat_side, gap, gap) == pytest.approx(0.0)
 
@@ -238,11 +238,11 @@ def test_the_larger_sidebearing_holds_where_each_side_s_own_would_not():
     rows = [(row + 0.5) * 10 for row in range(0, 10)]
 
     def kern(gap_left, gap_right):
-        wall_l = wall_at(bk.bubble_wall(left, 10, gap_left, 0, 95, 500, slope=100.0))
-        wall_r = wall_at(bk.bubble_wall(right, 10, gap_right, 0, 95, 500, slope=100.0))
+        wall_l = wall_at(pk.bubble_wall(left, 10, gap_left, 0, 95, 500, slope=100.0))
+        wall_r = wall_at(pk.bubble_wall(right, 10, gap_right, 0, 95, 500, slope=100.0))
         return -min(wall_l[y] + wall_r[y] for y in rows)
 
-    assert bk.layer_gap({bk.LEFT: left, bk.RIGHT: right}) == 34.0
+    assert pk.layer_gap({pk.LEFT: left, pk.RIGHT: right}) == 34.0
     assert kern(34.0, 34.0) == pytest.approx(0.0)
     assert kern(18.0, 34.0) == pytest.approx(-16.0)  # each side's own
 
@@ -254,8 +254,8 @@ def test_the_wall_never_turns_harder_than_the_slope_allows():
     profile = dict(flat(range(0, 20), 300.0))   # stem, far in
     profile.update(flat(range(20, 40), 20.0))   # bowl, out at the edge
     for angle, step in ((60.0, 10), (35.0, 10)):
-        slope = bk.wall_slope(angle)
-        wall = bk.bubble_wall(profile, step, 0.0, 0, 395, 1000, slope)
+        slope = pk.wall_slope(angle)
+        wall = pk.bubble_wall(profile, step, 0.0, 0, 395, 1000, slope)
         worst = max(
             abs(x1 - x0) / (y1 - y0)
             for (x0, y0), (x1, y1) in zip(wall, wall[1:]) if y1 > y0
@@ -264,11 +264,11 @@ def test_the_wall_never_turns_harder_than_the_slope_allows():
 
 
 def test_the_wall_angle_is_read_in_degrees_and_clamped():
-    assert bk.wall_slope(45) == pytest.approx(1.0)
-    assert bk.wall_slope("") == pytest.approx(bk.WALL_SLOPE)   # blank = default
-    assert bk.wall_slope(0) == pytest.approx(bk.WALL_SLOPE)       # 0 reads as blank
-    assert bk.wall_slope(1) == pytest.approx(bk.wall_slope(5))    # never vertical-only
-    assert bk.wall_slope(120) == pytest.approx(bk.wall_slope(85))  # never sideways
+    assert pk.wall_slope(45) == pytest.approx(1.0)
+    assert pk.wall_slope("") == pytest.approx(pk.WALL_SLOPE)   # blank = default
+    assert pk.wall_slope(0) == pytest.approx(pk.WALL_SLOPE)       # 0 reads as blank
+    assert pk.wall_slope(1) == pytest.approx(pk.wall_slope(5))    # never vertical-only
+    assert pk.wall_slope(120) == pytest.approx(pk.wall_slope(85))  # never sideways
 
 
 def test_amplitude_flattens_toward_the_outermost_point():
@@ -276,15 +276,15 @@ def test_amplitude_flattens_toward_the_outermost_point():
     INWARD, behind the ink, and a bubble that no longer contains its own glyph
     lets a pair collide. Toward the outermost, every value only shrinks."""
     wall = [(10.0, 0.0), (50.0, 100.0), (30.0, 200.0)]
-    assert bk.flatten_wall(wall, 1.0) == wall
-    assert bk.flatten_wall(wall, 0.5) == [(10.0, 0.0), (30.0, 100.0), (20.0, 200.0)]
-    assert bk.flatten_wall(wall, 0.0) == [(10.0, 0.0), (10.0, 100.0), (10.0, 200.0)]
+    assert pk.flatten_wall(wall, 1.0) == wall
+    assert pk.flatten_wall(wall, 0.5) == [(10.0, 0.0), (30.0, 100.0), (20.0, 200.0)]
+    assert pk.flatten_wall(wall, 0.0) == [(10.0, 0.0), (10.0, 100.0), (10.0, 200.0)]
 
 
 def test_flattening_never_moves_a_wall_inward():
     wall = [(10.0, 0.0), (50.0, 100.0), (30.0, 200.0)]
     for amplitude in (0.0, 0.25, 0.5, 0.75):
-        flattened = bk.flatten_wall(wall, amplitude)
+        flattened = pk.flatten_wall(wall, amplitude)
         assert all(new <= old for (new, _), (old, _) in zip(flattened, wall))
         assert min(x for x, _ in flattened) == pytest.approx(10.0)
 
@@ -294,19 +294,19 @@ def test_flattening_never_moves_a_wall_inward():
 
 def test_a_straight_wall_collapses_to_its_two_ends():
     straight = [(0.0, float(y)) for y in range(0, 200, 5)]
-    assert bk.simplify(straight, 1.0) == [(0.0, 0.0), (0.0, 195.0)]
+    assert pk.simplify(straight, 1.0) == [(0.0, 0.0), (0.0, 195.0)]
 
 
 def test_simplification_keeps_the_ends_and_the_corner():
     corner = [(0.0, 0.0), (0.0, 50.0), (100.0, 100.0), (200.0, 150.0)]
-    thinned = bk.simplify(corner, 1.0)
+    thinned = pk.simplify(corner, 1.0)
     assert thinned[0] == (0.0, 0.0) and thinned[-1] == (200.0, 150.0)
     assert (0.0, 50.0) in thinned
 
 
 def test_the_node_limit_holds_however_noisy_the_wall():
     noisy = [(float((row * 37) % 23), float(row * 5)) for row in range(150)]
-    thinned = bk.simplify(noisy, 1.0, max_nodes=8)
+    thinned = pk.simplify(noisy, 1.0, max_nodes=8)
     assert 2 <= len(thinned) <= 8
     assert thinned[0] == noisy[0] and thinned[-1] == noisy[-1]
 
@@ -318,21 +318,21 @@ def test_a_run_of_near_equal_x_becomes_one_straight_edge():
     """A flat side kept at 33, 32, 31 is a straight edge with a unit of noise
     on it, spending three nodes and two kinks on the unit."""
     wall = [(54.0, 452.0), (33.0, 398.0), (32.0, 338.0), (31.0, 118.0)]
-    assert bk.align_columns(wall, 5.0) == [(54, 452.0), (31, 398.0), (31, 118.0)]
+    assert pk.align_columns(wall, 5.0) == [(54, 452.0), (31, 398.0), (31, 118.0)]
 
 
 def test_the_run_aligns_outwards_not_to_the_average():
     """Smaller x is further out into the whitespace. Rounding a bubble inwards
     would have it report room the glyph does not have."""
     wall = [(20.0, 0.0), (24.0, 50.0), (22.0, 100.0)]
-    assert bk.align_columns(wall, 5.0) == [(20, 0.0), (20, 100.0)]
+    assert pk.align_columns(wall, 5.0) == [(20, 0.0), (20, 100.0)]
 
 
 def test_a_slow_drift_is_broken_into_runs_so_no_node_moves_far():
     """A chain of one-unit steps must not walk the wall across the glyph: a
     run ends where taking one more node would spread it past the tolerance."""
     wall = [(float(40 - index), float(index * 10)) for index in range(12)]
-    aligned = bk.align_columns(wall, 5.0)
+    aligned = pk.align_columns(wall, 5.0)
     assert [x for x, _ in aligned] == [35, 35, 29, 29]
     assert [y for _, y in aligned] == [0.0, 50.0, 60.0, 110.0]
 
@@ -341,14 +341,14 @@ def test_the_tolerance_is_inclusive_and_reads_whole_units():
     """A pair that reads as 5 apart on screen is 5 apart to this, whatever the
     fraction underneath says: the wall is stored in whole units."""
     exact = [(28.0, 0.0), (33.0, 50.0), (30.0, 100.0)]
-    assert bk.align_columns(exact, 5.0) == [(28, 0.0), (28, 100.0)]
+    assert pk.align_columns(exact, 5.0) == [(28, 0.0), (28, 100.0)]
     fractional = [(28.2, 0.0), (33.4, 50.0), (30.0, 100.0)]
-    assert bk.align_columns(fractional, 5.0) == [(28, 0.0), (28, 100.0)]
+    assert pk.align_columns(fractional, 5.0) == [(28, 0.0), (28, 100.0)]
 
 
 def test_a_zero_tolerance_aligns_nothing():
     wall = [(33.0, 0.0), (32.0, 50.0), (31.0, 100.0)]
-    assert bk.align_columns(wall, 0) == wall
+    assert pk.align_columns(wall, 0) == wall
 
 
 def test_a_curve_keeps_its_nodes():
@@ -356,26 +356,26 @@ def test_a_curve_keeps_its_nodes():
     nodes further apart than this. Quantising the raw wall would staircase it
     and cost a node per step."""
     arc = [(0.0, 0.0), (12.0, 100.0), (20.0, 200.0), (26.0, 300.0)]
-    assert bk.align_columns(arc, 5.0) == arc
+    assert pk.align_columns(arc, 5.0) == arc
 
 
 # --- Snapping -------------------------------------------------------------
 
 
 def test_snapping_rounds_the_rows_and_leaves_the_measurement_alone():
-    assert bk.snap_points([(247.4, 683.0), (12.0, 121.0)], 50) == [
+    assert pk.snap_points([(247.4, 683.0), (12.0, 121.0)], 50) == [
         (247, 700), (12, 100),
     ]
 
 
 def test_a_zero_increment_snaps_nothing_but_still_rounds():
-    assert bk.snap_points([(247.4, 683.4)], 0) == [(247, 683)]
+    assert pk.snap_points([(247.4, 683.4)], 0) == [(247, 683)]
 
 
 def test_nodes_landing_on_one_row_keep_the_outermost():
     """Two rows snapping together must not cost the bubble any width: in wall
     space the smaller x is the one further out into the whitespace."""
-    assert bk.snap_points([(40.0, 690.0), (10.0, 710.0)], 50) == [(10, 700)]
+    assert pk.snap_points([(40.0, 690.0), (10.0, 710.0)], 50) == [(10, 700)]
 
 
 # --- Walls of more than one piece ------------------------------------------
@@ -383,7 +383,7 @@ def test_nodes_landing_on_one_row_keep_the_outermost():
 
 def test_one_wall_passes_straight_through():
     wall = [(0.0, 0.0), (10.0, 100.0)]
-    assert bk.union_walls([wall]) == wall
+    assert pk.union_walls([wall]) == wall
 
 
 def test_the_union_takes_the_outermost_at_every_row():
@@ -391,8 +391,8 @@ def test_the_union_takes_the_outermost_at_every_row():
     what a neighbour meets."""
     base = [(50.0, 0.0), (50.0, 100.0)]
     accent = [(20.0, 0.0), (80.0, 100.0)]
-    assert bk.union_walls([base, accent], keep_min=True) == [(20.0, 0.0), (50.0, 100.0)]
-    assert bk.union_walls([base, accent], keep_min=False) == [(50.0, 0.0), (80.0, 100.0)]
+    assert pk.union_walls([base, accent], keep_min=True) == [(20.0, 0.0), (50.0, 100.0)]
+    assert pk.union_walls([base, accent], keep_min=False) == [(50.0, 0.0), (80.0, 100.0)]
 
 
 def test_a_gap_between_the_pieces_is_bridged_not_invented():
@@ -401,7 +401,7 @@ def test_a_gap_between_the_pieces_is_bridged_not_invented():
     claiming ink that is not there."""
     base = [(30.0, 0.0), (10.0, 500.0)]
     accent = [(60.0, 700.0), (60.0, 800.0)]
-    merged = bk.union_walls([base, accent], keep_min=True)
+    merged = pk.union_walls([base, accent], keep_min=True)
     assert merged == [(30.0, 0.0), (10.0, 500.0), (60.0, 700.0), (60.0, 800.0)]
     assert [y for _, y in merged] == sorted(y for _, y in merged)
 
@@ -409,7 +409,7 @@ def test_a_gap_between_the_pieces_is_bridged_not_invented():
 def test_a_row_only_one_piece_reaches_uses_that_piece():
     base = [(30.0, 0.0), (30.0, 500.0)]
     accent = [(60.0, 400.0), (60.0, 800.0)]
-    merged = dict((y, x) for x, y in bk.union_walls([base, accent], keep_min=True))
+    merged = dict((y, x) for x, y in pk.union_walls([base, accent], keep_min=True))
     assert merged[800.0] == 60.0     # only the accent is up there
     assert merged[400.0] == 30.0     # both reach; the base is further out
     assert merged[0.0] == 30.0
@@ -419,8 +419,8 @@ def test_xs_at_reads_a_horizontal_run_at_both_ends():
     wall = [(10.0, 0.0), (40.0, 0.0), (40.0, 100.0)]
     # The shared vertex is reported twice, once per segment. Harmless: the
     # union only ever takes a min or a max of these.
-    assert sorted(set(bk.xs_at(wall, 0.0))) == [10.0, 40.0]
-    assert bk.xs_at(wall, 200.0) == []
+    assert sorted(set(pk.xs_at(wall, 0.0))) == [10.0, 40.0]
+    assert pk.xs_at(wall, 200.0) == []
 
 
 # --- Agreeing across masters ----------------------------------------------
@@ -429,72 +429,72 @@ def test_xs_at_reads_a_horizontal_run_at_both_ends():
 # --- The grid setting -----------------------------------------------------
 class FakeFont:
     def __init__(self, parameter=None, settings=None):
-        self.customParameters = {bk.GRID_PARAMETER: parameter}
+        self.customParameters = {pk.GRID_PARAMETER: parameter}
         if settings is not None:
-            self.customParameters[bk.SETTINGS_PARAMETER] = settings
+            self.customParameters[pk.SETTINGS_PARAMETER] = settings
         self.upm = 1000
 
 
 def test_the_font_parameter_beats_the_preference():
-    prefs = {bk.PREF_GRID_ON: True, bk.PREF_GRID_Y: 4}
-    assert bk.resolve_grid(FakeFont("50"), prefs=prefs) == 50
+    prefs = {pk.PREF_GRID_ON: True, pk.PREF_GRID_Y: 4}
+    assert pk.resolve_grid(FakeFont("50"), prefs=prefs) == 50
 
 
 def test_the_old_two_number_parameter_keeps_its_rows():
     """`10 50` was x and y. The vertical lines are gone; the rows it asked for
     are still the rows that file snaps to."""
-    prefs = {bk.PREF_GRID_ON: True, bk.PREF_GRID_Y: 4}
-    assert bk.resolve_grid(FakeFont("10 50"), prefs=prefs) == 50
-    assert bk.resolve_grid(FakeFont("10,50"), prefs=prefs) == 50
+    prefs = {pk.PREF_GRID_ON: True, pk.PREF_GRID_Y: 4}
+    assert pk.resolve_grid(FakeFont("10 50"), prefs=prefs) == 50
+    assert pk.resolve_grid(FakeFont("10,50"), prefs=prefs) == 50
 
 
 def test_a_zero_parameter_turns_the_grid_off_for_that_font():
-    prefs = {bk.PREF_GRID_ON: True, bk.PREF_GRID_Y: 4}
-    assert bk.resolve_grid(FakeFont("0"), prefs=prefs) == 0
-    assert bk.resolve_grid(FakeFont("0 0"), prefs=prefs) == 0
+    prefs = {pk.PREF_GRID_ON: True, pk.PREF_GRID_Y: 4}
+    assert pk.resolve_grid(FakeFont("0"), prefs=prefs) == 0
+    assert pk.resolve_grid(FakeFont("0 0"), prefs=prefs) == 0
 
 
 def test_a_malformed_parameter_falls_through_to_the_preference():
-    prefs = {bk.PREF_GRID_ON: True, bk.PREF_GRID_Y: 4}
-    assert bk.resolve_grid(FakeFont("ten by fifty"), prefs=prefs) == 4
-    assert bk.resolve_grid(FakeFont("10 20 30"), prefs=prefs) == 4
+    prefs = {pk.PREF_GRID_ON: True, pk.PREF_GRID_Y: 4}
+    assert pk.resolve_grid(FakeFont("ten by fifty"), prefs=prefs) == 4
+    assert pk.resolve_grid(FakeFont("10 20 30"), prefs=prefs) == 4
 
 
 def test_no_parameter_and_no_preference_means_no_grid():
-    assert bk.resolve_grid(FakeFont(None), prefs={}) == 0
-    assert bk.resolve_grid(FakeFont(None), prefs={bk.PREF_GRID_ON: False}) == 0
+    assert pk.resolve_grid(FakeFont(None), prefs={}) == 0
+    assert pk.resolve_grid(FakeFont(None), prefs={pk.PREF_GRID_ON: False}) == 0
 
 
 # --- The settings parameter ------------------------------------------------
 
 
 def test_a_parameter_is_read_the_way_a_person_would_type_it():
-    assert bk.parse_settings("simplify: 4; bend: 40; depth: 20") == {
+    assert pk.parse_settings("simplify: 4; bend: 40; depth: 20") == {
         "simplify": 4.0, "bend": 40.0, "depth": 20.0,
     }
     # Commas, newlines and `=` are all fair: this is a field edited by hand.
-    assert bk.parse_settings("fit = -0.5,\ngrid=20") == {"fit": -0.5, "grid": 20.0}
+    assert pk.parse_settings("fit = -0.5,\ngrid=20") == {"fit": -0.5, "grid": 20.0}
 
 
 def test_a_file_written_under_an_older_name_still_reads():
     # The setting was named after the angle it caps (`turn`), then after what
     # that angle does to the wall (`hug`), before being named after what it
     # does to the drawing. A parameter typed under either is not a typo.
-    assert bk.parse_settings("turn: 40; depth: 20") == {"bend": 40.0, "depth": 20.0}
-    assert bk.parse_settings("hug: 40; depth: 20") == {"bend": 40.0, "depth": 20.0}
+    assert pk.parse_settings("turn: 40; depth: 20") == {"bend": 40.0, "depth": 20.0}
+    assert pk.parse_settings("hug: 40; depth: 20") == {"bend": 40.0, "depth": 20.0}
 
 
 def test_a_typo_costs_that_setting_and_nothing_else():
-    assert bk.parse_settings("depth: 20; bend: forty; wobble: 3; junk") == {"depth": 20.0}
-    assert bk.parse_settings(None) == {}
+    assert pk.parse_settings("depth: 20; bend: forty; wobble: 3; junk") == {"depth": 20.0}
+    assert pk.parse_settings(None) == {}
 
 
 def test_writing_and_reading_a_parameter_round_trips():
     values = {"simplify": 4.0, "bend": 40.0, "depth": 20.0,
               "amplitude": 75.0, "fit": 0.5, "grid": 20.0}
-    written = bk.format_settings(values)
+    written = pk.format_settings(values)
     assert written == "simplify: 4; bend: 40; depth: 20; amplitude: 75; fit: 0.5; grid: 20"
-    assert bk.parse_settings(written) == values
+    assert pk.parse_settings(written) == values
 
 
 def test_the_clipboard_form_is_a_whole_parameter_glyphs_will_paste():
@@ -502,49 +502,49 @@ def test_the_clipboard_form_is_a_whole_parameter_glyphs_will_paste():
     # pasting into Custom Parameters MAKES the row instead of erroring.
     values = {"simplify": 4.0, "bend": 40.0, "depth": 20.0,
               "amplitude": 75.0, "fit": 0.5, "grid": 20.0}
-    written = bk.format_parameter(values)
+    written = pk.format_parameter(values)
     assert written == (
-        "{\ncustomParameters = (\n{\nname = BubbleKern;\n"
+        "{\ncustomParameters = (\n{\nname = PolyKern;\n"
         'value = "simplify: 4; bend: 40; depth: 20; amplitude: 75; fit: 0.5; grid: 20";\n'
         "}\n);\n}\n")
     # And it still reads back as settings, for a text field at the other end.
-    assert bk.parse_settings(written) == values
+    assert pk.parse_settings(written) == values
 
 
 def test_a_pasted_parameter_is_not_mistaken_for_a_setting_named_value():
-    assert bk.parse_settings('{\ncustomParameters = (\n{\nname = BubbleKern;\n'
+    assert pk.parse_settings('{\ncustomParameters = (\n{\nname = PolyKern;\n'
                              'value = "depth: 30";\n}\n);\n}\n') == {"depth": 30.0}
 
 
 def test_a_master_beats_the_font_setting_by_setting():
     font = FakeFont(settings="depth: 20; bend: 40")
     master = FakeFont(settings="depth: 30")
-    assert bk.stored_settings(font, master) == {"depth": 30.0, "bend": 40.0}
-    assert bk.stored_settings(font) == {"depth": 20.0, "bend": 40.0}
+    assert pk.stored_settings(font, master) == {"depth": 30.0, "bend": 40.0}
+    assert pk.stored_settings(font) == {"depth": 20.0, "bend": 40.0}
 
 
 def test_the_source_is_the_highest_level_holding_a_parameter():
     font, master = FakeFont(settings="depth: 20"), FakeFont(settings="depth: 30")
-    assert bk.settings_source(font, master) == "master"
-    assert bk.settings_source(font, FakeFont()) == "font"
-    assert bk.settings_source(FakeFont(), FakeFont()) == "app"
+    assert pk.settings_source(font, master) == "master"
+    assert pk.settings_source(font, FakeFont()) == "font"
+    assert pk.settings_source(FakeFont(), FakeFont()) == "app"
 
 
 def test_a_stored_setting_beats_the_preference_and_is_clamped():
-    prefs = {bk.PREF_MAX_INSET: 15}
+    prefs = {pk.PREF_MAX_INSET: 15}
     font = FakeFont(settings="depth: 30")
-    assert bk.setting_value("depth", font, prefs=prefs) == 30.0
-    assert bk.setting_value("depth", FakeFont(), prefs=prefs) == 15
+    assert pk.setting_value("depth", font, prefs=prefs) == 30.0
+    assert pk.setting_value("depth", FakeFont(), prefs=prefs) == 15
     # Typed by hand, so it can say anything; the range is what it gets.
-    settings = bk.auto_settings(font=FakeFont(settings="depth: 900"),
+    settings = pk.auto_settings(font=FakeFont(settings="depth: 900"),
                                 master=None, prefs=prefs)
-    assert settings["max_inset"] == bk.INSET_RANGE[1]
+    assert settings["max_inset"] == pk.INSET_RANGE[1]
 
 
 def test_the_old_grid_parameter_still_counts_as_a_stored_setting():
-    assert bk.stored_settings(FakeFont("50")) == {"grid": 50.0}
+    assert pk.stored_settings(FakeFont("50")) == {"grid": 50.0}
     # And the settings parameter wins where both name it.
-    assert bk.stored_settings(FakeFont("50", settings="grid: 20")) == {"grid": 20.0}
+    assert pk.stored_settings(FakeFont("50", settings="grid: 20")) == {"grid": 20.0}
 
 
 # --- The vertical span ----------------------------------------------------
@@ -567,23 +567,23 @@ def test_a_bubble_covers_its_glyph_and_no_more():
     """`resetBubble` and the tool's own default bubble both span the layer
     bounds, so a generated one that ran to the ascender on every glyph would
     disagree with every bubble drawn by hand."""
-    assert bk.layer_span(fake_layer(-12, 512), MASTER) == (-12.0, 512.0)
+    assert pk.layer_span(fake_layer(-12, 512), MASTER) == (-12.0, 512.0)
 
 
 def test_a_layer_with_no_ink_falls_back_to_the_master():
-    assert bk.layer_span(fake_layer(0, 0), MASTER) == (-250.0, 750.0)
+    assert pk.layer_span(fake_layer(0, 0), MASTER) == (-250.0, 750.0)
 
 
 def test_the_wall_ends_exactly_on_the_box():
     """Scanlines sit at (row + 0.5) * step and land where they land; the ends
     are pinned so the bubble never overhangs its own box by half a step."""
-    wall = bk.bubble_wall(flat(range(0, 10), 30.0), 10, 0.0, -12, 97, 500)
+    wall = pk.bubble_wall(flat(range(0, 10), 30.0), 10, 0.0, -12, 97, 500)
     assert wall[0][1] == -12 and wall[-1][1] == 97
     assert all(-12 <= y <= 97 for _, y in wall)
 
 
 def test_a_glyph_shorter_than_one_scanline_still_gets_a_wall():
-    wall = bk.bubble_wall({0: 30.0}, 10, 0.0, 2, 6, 500)
+    wall = pk.bubble_wall({0: 30.0}, 10, 0.0, 2, 6, 500)
     assert len(wall) >= 2
     assert wall[0][1] == 2 and wall[-1][1] == 6
 
@@ -593,24 +593,24 @@ def test_the_bevel_stops_a_profile_receding_faster_than_the_slope():
     """A one-row notch cannot be infinitely deep to a neighbour: the cone
     limits how fast the frontier may recede."""
     profile = {0: 0.0, 1: 200.0, 2: 0.0}
-    beveled = bk.bevel_profile(profile, 10, slope=1.76)
+    beveled = pk.bevel_profile(profile, 10, slope=1.76)
     assert beveled[1] == pytest.approx(17.6)  # 1.76 * 10 units, one row away
     assert beveled[0] == 0.0 and beveled[2] == 0.0
 
 
 def test_the_bevel_leaves_a_shallow_profile_alone():
     profile = {0: 0.0, 1: 5.0, 2: 0.0}
-    assert bk.bevel_profile(profile, 10, slope=1.76) == profile
+    assert pk.bevel_profile(profile, 10, slope=1.76) == profile
 
 
 def test_the_cone_is_the_lowest_of_every_row_not_just_the_nearest():
     """A shallow row further away can be what a neighbour meets first, so the
     frontier is the envelope of cones from all of them."""
     profile = {0: 5.0, 1: 400.0}          # row 1 is deeply recessed
-    limits = bk.cone_limits(profile, 10, slope=1.0)
+    limits = pk.cone_limits(profile, 10, slope=1.0)
     # From row 1 alone the frontier at row 2 would be 410; row 0 is nearer the
     # edge even two rows away.
-    assert bk.cone_depth(limits, 2, 10, slope=1.0) == pytest.approx(25.0)
+    assert pk.cone_depth(limits, 2, 10, slope=1.0) == pytest.approx(25.0)
 
 
 def test_a_row_that_runs_through_the_cone_still_counts():
@@ -619,7 +619,7 @@ def test_a_row_that_runs_through_the_cone_still_counts():
     n = flat(range(0, 50), 30)
     p = dict(flat(range(0, 50), 30))
     p.update(flat(range(-20, 0), 30))  # the stem, as close in as above
-    assert bk.kern_fit(p, n, 10) > 20.0
+    assert pk.kern_fit(p, n, 10) > 20.0
 
 
 def test_glyphs_within_tolerance_cluster_and_convention_names_the_group():
@@ -629,7 +629,7 @@ def test_glyphs_within_tolerance_cluster_and_convention_names_the_group():
         "u": flat(range(10), 38),
         "T": flat(range(10), 200),
     }
-    groups = bk.cluster_kern_side(profiles, 20, 10)
+    groups = pk.cluster_kern_side(profiles, 20, 10)
     # `m` is the middle one and `m` is the alphabetical leader; the group is
     # called neither, because every member is within tolerance of every other
     # and `n` is the name a designer reads.
@@ -650,8 +650,8 @@ def test_the_medoid_pass_takes_back_what_the_greedy_pass_misplaced():
         "d_mid": flat(range(10), 34),
         "e_mid": flat(range(10), 38),
     }
-    greedy = bk.cluster_kern_side(profiles, 20, 10, rounds=0)
-    settled = bk.cluster_kern_side(profiles, 20, 10, rounds=2)
+    greedy = pk.cluster_kern_side(profiles, 20, 10, rounds=0)
+    settled = pk.cluster_kern_side(profiles, 20, 10, rounds=2)
     assert sorted(next(m for m in greedy.values() if "b_join" in m)) == [
         "a_lead", "b_join",
     ]
@@ -666,18 +666,18 @@ def test_the_inset_cap_is_a_percentage_of_the_advance():
     units cannot be right for both. The settings hand on the percentage and
     the width decides what it is worth.
     """
-    assert bk.auto_settings(SimpleNamespace(upm=1000), None,
-                            prefs={bk.PREF_MAX_INSET: "22"})["max_inset"] == 22.0
+    assert pk.auto_settings(SimpleNamespace(upm=1000), None,
+                            prefs={pk.PREF_MAX_INSET: "22"})["max_inset"] == 22.0
     # unset, and outside the range the slider offers
-    assert bk.auto_settings(SimpleNamespace(upm=1000), None,
-                            prefs={})["max_inset"] == bk.MAX_INSET_PERCENT
-    assert bk.auto_settings(SimpleNamespace(upm=1000), None,
-                            prefs={bk.PREF_MAX_INSET: "999"})["max_inset"] == bk.INSET_RANGE[1]
+    assert pk.auto_settings(SimpleNamespace(upm=1000), None,
+                            prefs={})["max_inset"] == pk.MAX_INSET_PERCENT
+    assert pk.auto_settings(SimpleNamespace(upm=1000), None,
+                            prefs={pk.PREF_MAX_INSET: "999"})["max_inset"] == pk.INSET_RANGE[1]
 
     # ink far from both edges, so nothing but the cap decides where the wall sits
     profile = flat(range(0, 20), 400.0)
     for width, deepest in ((500, 50.0), (1000, 100.0)):
-        nodes = bk.nodes_from_profile(profile, bk.LEFT, 10, 0.0, 0.0, 195.0, width,
+        nodes = pk.nodes_from_profile(profile, pk.LEFT, 10, 0.0, 0.0, 195.0, width,
                                       tolerance=0, max_inset=10.0)
         assert max(x for x, _ in nodes) == pytest.approx(deepest)
 
@@ -688,15 +688,15 @@ def test_the_inset_cap_is_a_percentage_of_the_advance():
 def test_two_walls_ask_for_the_whitespace_between_them():
     right = [(-20, 0), (-20, 100)]   # stored relative to the advance
     left = [(30, 0), (30, 100)]
-    assert bk.kern_from_walls(right, left) == pytest.approx(-50.0)
+    assert pk.kern_from_walls(right, left) == pytest.approx(-50.0)
     # and the closest approach decides it, not the average
     stepped = [(-20, 0), (-20, 50), (-5, 50), (-5, 100)]
-    assert bk.kern_from_walls(stepped, left) == pytest.approx(-35.0)
+    assert pk.kern_from_walls(stepped, left) == pytest.approx(-35.0)
 
 
 def test_walls_that_never_meet_decide_nothing():
-    assert bk.kern_from_walls([(-20, 0), (-20, 10)], [(30, 500), (30, 600)]) is None
-    assert bk.kern_from_walls([], [(30, 0), (30, 10)]) is None
+    assert pk.kern_from_walls([(-20, 0), (-20, 10)], [(30, 500), (30, 600)]) is None
+    assert pk.kern_from_walls([], [(30, 0), (30, 10)]) is None
 
 
 def test_the_fit_finds_the_settings_a_pair_was_kerned_with():
@@ -709,28 +709,28 @@ def test_the_fit_finds_the_settings_a_pair_was_kerned_with():
     """
     profiles = {
         "wedge": {
-            bk.LEFT: flat(range(0, 20), 40.0),
-            bk.RIGHT: {row: 40.0 + row * 12.0 for row in range(0, 20)},
+            pk.LEFT: flat(range(0, 20), 40.0),
+            pk.RIGHT: {row: 40.0 + row * 12.0 for row in range(0, 20)},
         },
         "post": {
-            bk.LEFT: {row: 40.0 + (19 - row) * 12.0 for row in range(0, 20)},
-            bk.RIGHT: flat(range(0, 20), 40.0),
+            pk.LEFT: {row: 40.0 + (19 - row) * 12.0 for row in range(0, 20)},
+            pk.RIGHT: flat(range(0, 20), 40.0),
         },
     }
     geometry = {name: (0.0, 195.0, 500.0) for name in profiles}
     # every one of these is a value the full search visits, or it could not
     # possibly reproduce what they generate
     known = dict(angles=(40.0,), insets=(15.0,), amplitudes=(100.0,), spaces=(0.0,))
-    assert known["angles"][0] in bk.FIT_ANGLES
-    assert known["insets"][0] in bk.FIT_INSETS
-    assert known["amplitudes"][0] in bk.FIT_AMPLITUDES
-    assert known["spaces"][0] in bk.FIT_PERCENTS
-    probe = bk.fit_settings(profiles, geometry, [("wedge", "post", 0.0)],
+    assert known["angles"][0] in pk.FIT_ANGLES
+    assert known["insets"][0] in pk.FIT_INSETS
+    assert known["amplitudes"][0] in pk.FIT_AMPLITUDES
+    assert known["spaces"][0] in pk.FIT_PERCENTS
+    probe = pk.fit_settings(profiles, geometry, [("wedge", "post", 0.0)],
                             10, tolerance=5, **known)
     wanted = probe["misses"][0][3]
     assert wanted < -50  # the pair really does need kerning, or this proves nothing
 
-    fitted = bk.fit_settings(profiles, geometry, [("wedge", "post", wanted)],
+    fitted = pk.fit_settings(profiles, geometry, [("wedge", "post", wanted)],
                              10, tolerance=5, spaces=(0.0,))
     assert fitted["pairs"] == 1
     assert fitted["error"] < 1.0  # the combination that made it is in the search
@@ -739,11 +739,11 @@ def test_the_fit_finds_the_settings_a_pair_was_kerned_with():
 
 
 def test_a_kern_the_model_cannot_reach_is_counted():
-    profiles = {name: {bk.LEFT: flat(range(0, 20), 40.0), bk.RIGHT: flat(range(0, 20), 40.0)}
+    profiles = {name: {pk.LEFT: flat(range(0, 20), 40.0), pk.RIGHT: flat(range(0, 20), 40.0)}
                 for name in ("a", "b")}
     geometry = {name: (0.0, 195.0, 500.0) for name in profiles}
     # A wall never leaves its advance, so a pair asking to OPEN is unreachable.
-    fitted = bk.fit_settings(profiles, geometry, [("a", "b", 40.0)], 10, tolerance=5)
+    fitted = pk.fit_settings(profiles, geometry, [("a", "b", 40.0)], 10, tolerance=5)
     assert fitted["unreachable"] == 1
 
 
@@ -751,12 +751,12 @@ def test_fit_moves_only_the_pairs_that_already_kern():
     """A pair whose walls touch is at the spacing the file gave it, and Fit is
     not an instruction to change that. Nor does it ever make a positive kern.
     """
-    assert bk.with_fit(-100.0, 20.0) == -80.0    # looser
-    assert bk.with_fit(-100.0, -20.0) == -120.0  # tighter
-    assert bk.with_fit(-10.0, 20.0) == 0.0       # as far as loose goes
-    assert bk.with_fit(0.0, 20.0) == 0.0         # a flat pair stays flat
-    assert bk.with_fit(0.0, -20.0) == 0.0        # in both directions
-    assert bk.with_fit(-50.0, 0.0) == -50.0      # and 0 changes nothing
+    assert pk.with_fit(-100.0, 20.0) == -80.0    # looser
+    assert pk.with_fit(-100.0, -20.0) == -120.0  # tighter
+    assert pk.with_fit(-10.0, 20.0) == 0.0       # as far as loose goes
+    assert pk.with_fit(0.0, 20.0) == 0.0         # a flat pair stays flat
+    assert pk.with_fit(0.0, -20.0) == 0.0        # in both directions
+    assert pk.with_fit(-50.0, 0.0) == -50.0      # and 0 changes nothing
 
 
 # --- Pulling the handover taut ---------------------------------------------
@@ -776,8 +776,8 @@ o_ACCENT_R = [(528.0, 572.0), (445.0, 700.0)]
 
 
 def taut(base, accent, keep_min=True):
-    merged = bk.union_walls([base, accent], keep_min=keep_min)
-    return bk.taut_join(merged, [base, accent], keep_min=keep_min)
+    merged = pk.union_walls([base, accent], keep_min=keep_min)
+    return pk.taut_join(merged, [base, accent], keep_min=keep_min)
 
 
 def test_the_step_at_the_handover_is_pulled_out():
@@ -812,10 +812,10 @@ def test_the_wall_never_moves_into_the_ink():
     for base, accent, keep_min in ((O_WALL, O_ACCENT, True),
                                    (o_WALL, o_ACCENT, True),
                                    (o_WALL_R, o_ACCENT_R, False)):
-        merged = bk.union_walls([base, accent], keep_min=keep_min)
-        pulled = bk.taut_join(merged, [base, accent], keep_min=keep_min)
+        merged = pk.union_walls([base, accent], keep_min=keep_min)
+        pulled = pk.taut_join(merged, [base, accent], keep_min=keep_min)
         for x, y in merged:
-            got = bk.xs_at(pulled, y)
+            got = pk.xs_at(pulled, y)
             assert got, f'row {y} disappeared'
             if keep_min:
                 assert min(got) <= x + 1e-6
@@ -828,10 +828,10 @@ def test_pieces_sharing_a_height_are_not_a_handover():
     between them to pull a string across, so the row-by-row union stands."""
     base = [(50.0, 0.0), (50.0, 500.0)]
     accent = [(20.0, 400.0), (80.0, 600.0)]
-    merged = bk.union_walls([base, accent], keep_min=True)
-    assert bk.taut_join(merged, [base, accent], keep_min=True) == merged
+    merged = pk.union_walls([base, accent], keep_min=True)
+    assert pk.taut_join(merged, [base, accent], keep_min=True) == merged
 
 
 def test_one_piece_is_never_pulled_taut():
     wall = [(50.0, 0.0), (10.0, 300.0), (50.0, 600.0)]
-    assert bk.taut_join(wall, [wall], keep_min=True) == wall
+    assert pk.taut_join(wall, [wall], keep_min=True) == wall

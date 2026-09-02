@@ -3,7 +3,7 @@
 
 `autoGenerate` is what the Edit menu's 'Generate Auto Bubbles for Selected
 Glyphs' calls, and its Option variant hands in the layers of EVERY master at
-once. `stored_settings` reads a master's own BubbleKern parameter over the
+once. `stored_settings` reads a master's own PolyKern parameter over the
 font's, so a run that resolved the settings once - against whichever master
 happened to be selected - measured every other master with the wrong gap,
 bend and grid. The settings have to follow the layer.
@@ -17,21 +17,21 @@ import sys
 
 import pytest
 
-RESOURCES = (pathlib.Path(__file__).parent.parent / 'BubbleKernCentral.glyphsPlugin'
+RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
 		/ 'Contents' / 'Resources')
 
 
 def _load(name):
 	if str(RESOURCES) not in sys.path:
 		sys.path.insert(0, str(RESOURCES))
-	spec = importlib.util.spec_from_file_location('bk_' + name, RESOURCES / (name + '.py'))
+	spec = importlib.util.spec_from_file_location('pk_' + name, RESOURCES / (name + '.py'))
 	module = importlib.util.module_from_spec(spec)
-	sys.modules['bk_' + name] = module
+	sys.modules['pk_' + name] = module
 	spec.loader.exec_module(module)
 	return module
 
 
-store = _load('BKBubbleStore')  # what the menu action calls into
+store = _load('PKBubbleStore')  # what the menu action calls into
 
 REGULAR = type('Master', (), {'id': 'm1', 'italicAngle': 0, 'xHeight': 500,
 		'name': 'Regular', 'ascender': 750, 'descender': -250})()
