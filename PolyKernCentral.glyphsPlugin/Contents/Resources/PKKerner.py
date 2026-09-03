@@ -1,7 +1,7 @@
 from __future__ import division, print_function, unicode_literals
 
 import objc
-from GlyphsApp import Glyphs, GSLayer, GSGlyph, GetFolder, EDIT_MENU #, GSCallbackHandler
+from GlyphsApp import Glyphs, GSLayer, GSGlyph, GetFolder, EDIT_MENU, UPDATEINTERFACE #, GSCallbackHandler
 from GlyphsApp.plugins import GeneralPlugin
 import traceback
 import vanilla
@@ -33,6 +33,11 @@ import PKCommonLogic
 import PKExport
 
 totalPairsPrefix = 'Total Pairs to Kern : '
+
+# THE LIVE PLUGIN, so the tool can find the window the settings now live in.
+# Mirrors `PKTool.mainDrawingHandler`, which is how this plugin finds the tool.
+# The two are separate principal classes of one bundle and Glyphs makes both.
+mainKerner = None
 
 # Vanilla.Sheet which can be closed upon esc key press
 class escapableSheet(vanilla.Sheet):
@@ -91,6 +96,8 @@ class PolyKernKerner(GeneralPlugin):
 
 	@objc.python_method
 	def start(self):  # STUFF TO UPON GLYPHS STARTUP
+		global mainKerner
+		mainKerner = self
 		# BEFORE ANYTHING READS A PREFERENCE. This plugin was called BubbleKern
 		# and everything it remembers was saved under that name; the first
 		# launch under the new one brings it over. Runs once, and says so in
@@ -161,16 +168,13 @@ class PolyKernKerner(GeneralPlugin):
 				error=True)
 
 	def openSettings_(self, sender):
-		# The window belongs to the TOOL, which Glyphs instantiates at launch
-		# alongside this one - both are principal classes of the same bundle.
+		# THE SAME WINDOW AS THE KERNER, opened on its other pane. The settings
+		# used to be a window of the tool's own; the pane is still the tool's,
+		# and says so itself when the tool has not loaded.
 		try:
-			import PKTool
-			if PKTool.mainDrawingHandler is None:
-				PKCommonLogic.show_alert('PolyKern Settings',
-					'The PolyKern tool has not loaded, so its settings cannot open.',
-					cancel=False)
-				return
-			PKTool.mainDrawingHandler.openSettingsWindow()
+			self.showWindow_(sender)
+			if self.w is not None:
+				self.showPane(self.SETTINGS)
 		except Exception:
 			PKCommonLogic.log(f'openSettings error: {traceback.format_exc()}', error=True)
 
@@ -318,13 +322,27 @@ class PolyKernKerner(GeneralPlugin):
 		except Exception:
 			PKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
 
+	# THE TWO PANES OF THE ONE WINDOW, and what the toolbar calls them.
+	KERNER, SETTINGS = 'kerner', 'settings'
+	WINDOW_SIZE = (840, 500)
+	settingsTool = None  # a class default; see the note on _relevantRows
+
 	@objc.python_method
 	def buildWindow(self):
 		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
+		# ONE WINDOW FOR BOTH, PICKED FROM THE TOOLBAR. The kerner and the
+		# settings were two floating windows over the same canvas, and neither
+		# is any use without the other: the settings decide what a wall looks
+		# like and the kerner decides what to do with it.
+		#
+		# ONE SIZE FOR BOTH PANES, deliberately. The settings only fill 700x398
+		# of it, so there is air at the right and the bottom - the alternative
+		# is the window jumping size every time the toolbar is clicked.
 		self.w = vanilla.Window(
-			(230, 500),
+			self.WINDOW_SIZE,
+			minSize=(700, 420),
 			maxSize=(2000, 2000),
-			title='PolyKern Kerner',
+			title='PolyKern',
 			autosaveName="com.Tosche.PolyKernKerner.mainwindow"  # stores last window position and size
 		)
 
@@ -333,9 +351,15 @@ class PolyKernKerner(GeneralPlugin):
 		windowNS = self.w.getNSWindow()
 		windowNS.setHidesOnDeactivate_(True)  # MAKE WINDOW HIDE WHILE IN BACKGROUND
 
+		# POSSIZE, NOT RULES, for the panes themselves: they are both the whole
+		# window, and a container placed by rules cannot hold one placed by
+		# posSize. Each pane lays its own contents out however it likes.
+		self.w.kernerPane = vanilla.Group((0, 0, 0, 0))
+		self.w.settingsPane = vanilla.Group((0, 0, 0, 0))
+
 		# NO "REMOVE POLYKERN DATA" TAB. Clearing lives in Edit > PolyKern now,
 		# where it works on a selection rather than on the whole font at once.
-		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts"])
+		self.w.kernerPane.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts"])
 
 		self.buildKerningTab()
 		self.buildFontTab()
@@ -345,13 +369,100 @@ class PolyKernKerner(GeneralPlugin):
 			'H:|[tabs(>=100)]|',
 			'V:|-[tabs]|',
 		]
-		self.w.addAutoPosSizeRules(rules, None)
+		self.w.kernerPane.addAutoPosSizeRules(rules, None)
+
+		self.buildSettingsPane()
+		self.addPaneToolbar()
+		self.showPane(self.KERNER)
+
+	@objc.python_method
+	def addPaneToolbar(self):
+		"""Kerner and Settings, as the two entries of a preferences toolbar."""
+		try:
+			def symbol(name):
+				return NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+					name, None)
+			items = [
+				dict(itemIdentifier=self.KERNER, label='Kerner',
+					toolTip='Generate kerning, and bubbled fonts',
+					imageObject=symbol('text.justify.left'), imageTemplate=True,
+					selectable=True, callback=self.pickKerner),
+				dict(itemIdentifier=self.SETTINGS, label='Settings',
+					toolTip='What a wall is shaped like, and what the kerner '
+						'does with it',
+					imageObject=symbol('slider.horizontal.3'), imageTemplate=True,
+					selectable=True, callback=self.pickSettings),
+			]
+			self.w.addToolbar('PolyKernPanes', items, addStandardItems=False,
+				displayMode='iconLabel', toolbarStyle='preference')
+		except Exception:
+			log(f'addPaneToolbar error: {traceback.format_exc()}', error=True)
+
+	# TWO CALLBACKS, NOT ONE THAT READS THE SENDER. What vanilla hands a
+	# toolbar callback is not worth guessing at from two lines away.
+	@objc.python_method
+	def pickKerner(self, sender=None):
+		self.showPane(self.KERNER)
+
+	@objc.python_method
+	def pickSettings(self, sender=None):
+		self.showPane(self.SETTINGS)
+
+	@objc.python_method
+	def showPane(self, which):
+		"""Show one pane and hide the other, toolbar in step."""
+		try:
+			self.w.kernerPane.show(which == self.KERNER)
+			self.w.settingsPane.show(which == self.SETTINGS)
+			toolbar = self.w.getNSWindow().toolbar()
+			if toolbar is not None:
+				toolbar.setSelectedItemIdentifier_(which)
+		except Exception:
+			log(f'showPane error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def buildSettingsPane(self):
+		"""The tool's settings, built into this window's second pane.
+
+		THE TOOL OWNS THESE CONTROLS, not this plugin - they drive the canvas,
+		and every one of their callbacks is a method of the tool. All this does
+		is hand the tool somewhere to put them. Its methods reach their
+		controls through `setW`, and a Group answers to that exactly as the
+		floating window it used to make did.
+
+		-> True when the pane was filled.
+		"""
+		try:
+			import PKTool
+			pane = self.w.settingsPane
+			tool = PKTool.mainDrawingHandler
+			if tool is None:
+				# THE TOOL IS A SEPARATE PRINCIPAL CLASS of this bundle and may
+				# not have been instantiated yet. Say so in the pane rather
+				# than leaving it blank.
+				pane.notLoaded = vanilla.TextBox((20, 20, -20, 60),
+					'The PolyKern tool has not loaded yet, so its settings are '
+					'not here. Pick the PolyKern tool in the toolbar once, then '
+					'reopen this window.')
+				return False
+			tool.setW = pane
+			values = tool.settingValues()
+			tool.buildPreviewSection(pane)
+			tool.buildShapeSection(pane, 15, 365, values)
+			tool.buildKernerSection(pane, 15, 365, 350, values)
+			tool.loadSettings()  # ONE PATH INTO THE CONTROLS, opening included
+			Glyphs.addCallback(tool.settingsInterfaceUpdate, UPDATEINTERFACE)
+			self.settingsTool = tool
+			return True
+		except Exception:
+			log(f'buildSettingsPane error: {traceback.format_exc()}', error=True)
+			return False
 
 	@objc.python_method
 	def buildKerningTab(self):
 		"""The presets table and what a run does with it."""
 		# GENERATE KERNING TAB
-		tab0 = self.w.tabs[0]  # STANDARD KERNIG GENERATION
+		tab0 = self.w.kernerPane.tabs[0]  # STANDARD KERNIG GENERATION
 		tab0.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
 		tab0.group1 = vanilla.Group('auto')  # BUTTONS
 
@@ -536,7 +647,7 @@ class PolyKernKerner(GeneralPlugin):
 	def buildFontTab(self):
 		"""Exporting a font with the bubbles baked in as BBLH."""
 		# GENERATE FONT TAB
-		tab1 = self.w.tabs[1]
+		tab1 = self.w.kernerPane.tabs[1]
 		tab1.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
 
 1. You can generate a new font with 'BBLH' table based on the PolyKern data.
@@ -579,6 +690,14 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			log(f'showWindow_ error: {traceback.format_exc()}', error=True)
 
 	def windowShouldClose_(self, sender):  # User attempts to close the main window
+		# THE SETTINGS ARE IN THIS WINDOW NOW, and what the sliders say has to
+		# reach the font before it goes away. The window only hides, so the
+		# tool's own close handler never runs.
+		if self.settingsTool is not None:
+			try:
+				self.settingsTool.applySettings()
+			except Exception:
+				log(f'applySettings on close: {traceback.format_exc()}', error=True)
 		if self.w:
 			self.w.hide()  # hide the window instead of closing
 		return False   # IMPORTANT: prevents actual close
@@ -629,7 +748,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			elif index == presetsDicLength + 3: # delete
 				if len(self.presetsDic) <= 1: # only one or zero preset to delete
 					PKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
-					self.w.tabs[0].group0.optionsPopup.set(0)
+					self.w.kernerPane.tabs[0].group0.optionsPopup.set(0)
 				else:
 					deleting = PKCommonLogic.show_alert(f'Are you sure you want to delete "{self.loadedPresetName}"?')
 					if deleting:
@@ -645,7 +764,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	def refreshPopupButton(self):  # refresh option popup items
 		try:
 			presetsDicNames = sorted([k for k in self.presetsDic.keys()])
-			thePopup = self.w.tabs[0].group0.optionsPopup
+			thePopup = self.w.kernerPane.tabs[0].group0.optionsPopup
 
 			thePopup.setItems(presetsDicNames + popupOptions)
 
@@ -707,9 +826,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				pass
 
 			# which dic to set
-			if sender == self.w.tabs[0].group0.optionsPopup:
+			if sender == self.w.kernerPane.tabs[0].group0.optionsPopup:
 				log('Popup is loading')
-			elif sender == self.w.tabs[0].group0.permList:  # the permList has been edited
+			elif sender == self.w.kernerPane.tabs[0].group0.permList:  # the permList has been edited
 				log('List view is loading')
 			else: # on first load; load the first item?
 				if not self.loadedPresetName:
@@ -727,7 +846,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					pairsCount = self.pairsCount(perm[0], perm[1], perm[2])
 					dictToSet['Pairs'] = pairsCount
 					permutations.append(dictToSet)
-				self.w.tabs[0].group0.permList.set(permutations)
+				self.w.kernerPane.tabs[0].group0.permList.set(permutations)
 
 				self.refreshPopupButton()  # load popup
 
@@ -747,7 +866,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			elif option == 2: # making new list
 				self.presetsDic[self.loadedPresetName] = [('A B C', 'X Y Z', True, True)]
 			else: # saving
-				permList = self.w.tabs[0].group0.permList.get()
+				permList = self.w.kernerPane.tabs[0].group0.permList.get()
 				perms = []
 				for item in permList: # for each line
 					perm = []
@@ -770,7 +889,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def refreshPreview(self): # preview EditText
 		try:
-			permList = self.w.tabs[0].group0.permList
+			permList = self.w.kernerPane.tabs[0].group0.permList
 			index = permList.getSelectedIndexes()[0]
 			lefts = permList.get()[index]['Left'].split(' ')
 			rights = permList.get()[index]['Right'].split(' ')
@@ -795,7 +914,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 						break
 			if count <= 0:
 				lines += '(...)'
-			self.w.tabs[0].group0.preview.set(lines)
+			self.w.kernerPane.tabs[0].group0.preview.set(lines)
 		except Exception:
 			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
 
@@ -926,9 +1045,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def refreshTotal(self): # preview EditText
 		try:
-			permutations = self.w.tabs[0].group0.permList.get()
+			permutations = self.w.kernerPane.tabs[0].group0.permList.get()
 			totalPairs = self.totalCount(permutations)
-			self.w.tabs[0].group1.total.set(totalPairsPrefix + format(totalPairs, ','))
+			self.w.kernerPane.tabs[0].group1.total.set(totalPairsPrefix + format(totalPairs, ','))
 		except Exception:
 			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
 
@@ -943,7 +1062,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 	@objc.python_method
 	def permListSelected(self, sender):  # when permutation list line has been selected
-		groupView = self.w.tabs[0].group0.getNSView()
+		groupView = self.w.kernerPane.tabs[0].group0.getNSView()
 		if len(groupView.subviews()) <= 1:
 			# I want to avoid sender being not ready on the first run
 			# 1 means only Popup has been loaded, and the list is not ready yet
@@ -1027,7 +1146,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			if not newText1 or not newText2:
 				pass
 			else:
-				permListUI = self.w.tabs[0].group0.permList
+				permListUI = self.w.kernerPane.tabs[0].group0.permList
 				i = permListUI.getSelectedIndexes()[0]
 				content = permListUI.get()
 				content[i]["Left"] = newText1
@@ -1047,7 +1166,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def makeDragDataCallback(self, index):
 		try:
-			permList = self.w.tabs[0].group0.permList
+			permList = self.w.kernerPane.tabs[0].group0.permList
 
 			indexes = [index]
 
@@ -1066,7 +1185,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def dropCandidateCallback(self, info):
 		source = info["source"]
-		if source == self.w.tabs[0].group0.permList:
+		if source == self.w.kernerPane.tabs[0].group0.permList:
 			return "move"
 		return "copy"
 
@@ -1078,7 +1197,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			endIndex = info["index"] # proposed drop index
 			items = info["items"]
 
-			permList = self.w.tabs[0].group0.permList
+			permList = self.w.kernerPane.tabs[0].group0.permList
 
 			# reorder
 			if source == permList:
@@ -1103,32 +1222,32 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def addButton(self, sender):  # add a permutation
 		try:
-			permList = self.w.tabs[0].group0.permList
+			permList = self.w.kernerPane.tabs[0].group0.permList
 			listToSet = permList.get()
 			listToSet += [{'Kern': True, 'Left': 'A B C', 'Right': 'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
 			permList.set(listToSet)
 
 			# enable delButton if there's multiple: maybe move elsewhere
 			if len(listToSet) > 1:
-				self.w.tabs[0].group0.delButton.enable(True)
+				self.w.kernerPane.tabs[0].group0.delButton.enable(True)
 		except Exception:
 			log(f'addButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def delButton(self, sender):  # remove a selected permutation
 		try:
-			permList = self.w.tabs[0].group0.permList
+			permList = self.w.kernerPane.tabs[0].group0.permList
 			index = permList.getSelectedIndexes()[0]
-			listToSet = self.w.tabs[0].group0.permList.get()
+			listToSet = self.w.kernerPane.tabs[0].group0.permList.get()
 			try: # try because nothing may be selected
 				del listToSet[index]
-				self.w.tabs[0].group0.permList.set(listToSet)
+				self.w.kernerPane.tabs[0].group0.permList.set(listToSet)
 			except Exception:
 				pass
 
 			# disable delButton if there's only one item: maybe move elsewhere
 			if len(listToSet) == 1:
-				self.w.tabs[0].group0.delButton.enable(False)
+				self.w.kernerPane.tabs[0].group0.delButton.enable(False)
 		except Exception:
 			log(f'delButton error: {traceback.format_exc()}', error=True)
 
@@ -1137,15 +1256,15 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			self.font.disableUpdateInterface()
 
-			self.w.tabs[0].group1.progress.set(0)
-			self.w.tabs[0].group1.progress.show(True)
+			self.w.kernerPane.tabs[0].group1.progress.set(0)
+			self.w.kernerPane.tabs[0].group1.progress.show(True)
 
 			for progress in PKCommonLogic.kernOpenType(presetName=self.loadedPresetName):
 
-				self.w.tabs[0].group1.progress.set(progress)
+				self.w.kernerPane.tabs[0].group1.progress.set(progress)
 
 			time.sleep(.5)
-			self.w.tabs[0].group1.progress.show(False)
+			self.w.kernerPane.tabs[0].group1.progress.show(False)
 
 			self.font.enableUpdateInterface()
 		except Exception:

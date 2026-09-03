@@ -1855,7 +1855,28 @@ class PolyKernTool(SelectTool):
 	def openSettings_(self, sender):
 		# ONE TURN LATER, like every other menu item here: putting a window up
 		# while AppKit is still taking the menu down is the deadlock.
-		NSOperationQueue.mainQueue().addOperationWithBlock_(self.openSettingsWindow)
+		NSOperationQueue.mainQueue().addOperationWithBlock_(self.showSettings)
+
+	@objc.python_method
+	def showSettings(self):
+		"""The settings, wherever they live.
+
+		THE KERNER'S WINDOW IF IT IS THERE. The settings are a pane of it now,
+		and opening the old standalone window alongside would point `setW` at
+		the standalone one - leaving the pane in the kerner's window looking
+		right and driving nothing.
+
+		The fallback is only reached when that plugin is not loaded, and then
+		there is no pane to strand.
+		"""
+		try:
+			import PKKerner
+			if PKKerner.mainKerner is not None:
+				PKKerner.mainKerner.openSettings_(None)
+				return
+		except Exception:
+			log(f'showSettings via the kerner: {traceback.format_exc()}', error=True)
+		self.openSettingsWindow()
 
 	def insertTab_(self, sender):  # WHEN TAB IS PRESSED
 		self._selectNext(1)

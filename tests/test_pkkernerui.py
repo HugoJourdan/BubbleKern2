@@ -36,6 +36,10 @@ def _load(name, as_name=None):
 _load('PKBubbleStore', 'PKBubbleStore')
 sys.modules.setdefault('PKTool', types.SimpleNamespace(mainDrawingHandler=None))
 kerner = _load('PKKerner')
+# UNDER ITS PLAIN NAME TOO. The tool does `import PKKerner` to find the
+# window the settings live in, and executing the file twice re-registers
+# its ObjC classes.
+sys.modules.setdefault('PKKerner', kerner)
 
 from AppKit import NSApplication  # noqa: E402
 from GlyphsApp import Glyphs  # noqa: E402  (the conftest stub)
@@ -57,7 +61,7 @@ def window(monkeypatch):
 	plugin.presetsDic = dict(preset)
 	plugin.buildWindow()
 	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
-	yield plugin, plugin.w.tabs[0].group0
+	yield plugin, plugin.w.kernerPane.tabs[0].group0
 	plugin.w.close()
 
 
@@ -113,7 +117,7 @@ def test_they_are_smaller_than_the_row_they_used_to_sit_in(window):
 def test_one_button_starts_a_run(window):
 	"""Kern All Pairs and Kern Pairs for Selected Glyphs are one Apply Kerning."""
 	_, group = window
-	buttons = window[0].w.tabs[0].group1
+	buttons = window[0].w.kernerPane.tabs[0].group1
 	assert hasattr(buttons, 'applyButton')
 	assert not hasattr(buttons, 'allButton') and not hasattr(buttons, 'selButton')
 	assert buttons.applyButton.getTitle() == 'Apply Kerning'
@@ -122,7 +126,7 @@ def test_one_button_starts_a_run(window):
 def test_there_is_no_write_groups_switch_any_more(window):
 	"""It is not optional now - PKCommonLogic sets useGroups True outright."""
 	_, group = window
-	assert not hasattr(window[0].w.tabs[0].group1, 'writeGroups')
+	assert not hasattr(window[0].w.kernerPane.tabs[0].group1, 'writeGroups')
 	source = (RESOURCES / 'PKCommonLogic.py').read_text()
 	assert 'useGroups = True' in source
 
@@ -134,7 +138,7 @@ def test_the_total_counts_only_the_ticked_rows(window):
 		{'Kern': False, 'Left': 'T V W', 'Right': 'a e o', 'Add Flipped': False, 'Pairs': '9'},
 	])
 	plugin.refreshTotal()
-	total = plugin.w.tabs[0].group1.total
+	total = plugin.w.kernerPane.tabs[0].group1.total
 	assert total.get().endswith('4'), total.get()
 
 
@@ -143,7 +147,7 @@ def test_the_total_counts_only_the_ticked_rows(window):
 
 def test_the_total_says_what_it_counts(window):
 	plugin, _ = window
-	assert plugin.w.tabs[0].group1.total.get().startswith('Total Pairs to Kern')
+	assert plugin.w.kernerPane.tabs[0].group1.total.get().startswith('Total Pairs to Kern')
 
 
 def _visible(view):
@@ -160,7 +164,7 @@ def test_the_total_sits_over_the_apply_button(window):
 	"""It used to be under the list, a column away from the button that acts
 	on it. Both are in the bottom bar now, right-aligned together."""
 	plugin, _ = window
-	bar = plugin.w.tabs[0].group1
+	bar = plugin.w.kernerPane.tabs[0].group1
 	total = _visible(bar.total.getNSTextField())
 	button = _visible(bar.applyButton.getNSButton())
 	# the bar is not flipped, so higher on screen is a larger y
@@ -171,7 +175,7 @@ def test_the_total_sits_over_the_apply_button(window):
 
 def test_the_total_and_the_button_are_not_touching(window):
 	plugin, _ = window
-	bar = plugin.w.tabs[0].group1
+	bar = plugin.w.kernerPane.tabs[0].group1
 	total = _visible(bar.total.getNSTextField())
 	button = _visible(bar.applyButton.getNSButton())
 	gap = total.origin.y - (button.origin.y + button.size.height)
@@ -189,7 +193,7 @@ def test_the_list_is_no_longer_squeezed_by_the_total(window):
 
 def test_there_is_an_info_button_beside_the_checkbox(window):
 	plugin, _ = window
-	bar = plugin.w.tabs[0].group1
+	bar = plugin.w.kernerPane.tabs[0].group1
 	assert hasattr(bar, 'infoButton')
 	check = bar.includeRelevant.getNSButton().frame()
 	info = bar.infoButton.getNSButton().frame()
@@ -221,7 +225,7 @@ def test_the_blurb_says_the_list_adds_rather_than_narrows(window):
 def test_the_popover_opens_and_carries_the_pairs(window):
 	"""Built for real - a bad posSize or column raises here, not in Glyphs."""
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
 	popover = getattr(plugin, 'relevantPopover', None)
 	assert popover is not None, 'the popover was not built'
 	assert len(popover.pairs.get()) == len(kerner.PKAutoBubble.relevant_pairs())
@@ -248,7 +252,7 @@ def test_the_corner_buttons_keep_clear_of_the_corner(window):
 def test_the_blurb_gets_the_room_its_words_need(window):
 	"""It was given a round 106 points, wanted 126, and lost two lines."""
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
 	popover = plugin.relevantPopover
 	text = plugin.RELEVANT_BLURB.format(count=len(plugin.relevantRows()))
 	wide = plugin.POPOVER_SIZE[0] - plugin.POPOVER_MARGIN * 2
@@ -270,7 +274,7 @@ def test_a_longer_paragraph_would_get_a_taller_box(window):
 
 def test_the_pairs_still_fit_under_it(window):
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
 	popover = plugin.relevantPopover
 	content = popover.getNSPopover().contentViewController().view().frame()
 	list_frame = popover.pairs.getNSScrollView().frame()
@@ -281,3 +285,138 @@ def test_the_pairs_still_fit_under_it(window):
 	# the two do not overlap: the list starts below the paragraph
 	assert blurb.size.height + 14 <= content.size.height - list_frame.size.height
 	popover.close()
+
+
+# --- one window, two panes -------------------------------------------------
+
+
+def test_the_window_is_one_polykern_not_a_kerner(window):
+	plugin, _ = window
+	assert plugin.w.getNSWindow().title() == 'PolyKern'
+
+
+def test_both_panes_exist(window):
+	plugin, _ = window
+	assert hasattr(plugin.w, 'kernerPane') and hasattr(plugin.w, 'settingsPane')
+
+
+def test_the_toolbar_offers_the_two_panes(window):
+	plugin, _ = window
+	toolbar = plugin.w.getNSWindow().toolbar()
+	assert toolbar is not None, 'no toolbar'
+	names = [str(i.itemIdentifier()) for i in toolbar.items()]
+	assert names == [plugin.KERNER, plugin.SETTINGS], names
+
+
+def test_showing_one_pane_hides_the_other(window):
+	plugin, _ = window
+	plugin.showPane(plugin.SETTINGS)
+	assert plugin.w.kernerPane.getNSView().isHidden()
+	assert not plugin.w.settingsPane.getNSView().isHidden()
+	plugin.showPane(plugin.KERNER)
+	assert not plugin.w.kernerPane.getNSView().isHidden()
+	assert plugin.w.settingsPane.getNSView().isHidden()
+
+
+def test_the_toolbar_follows_the_pane(window):
+	plugin, _ = window
+	plugin.showPane(plugin.SETTINGS)
+	toolbar = plugin.w.getNSWindow().toolbar()
+	assert str(toolbar.selectedItemIdentifier()) == plugin.SETTINGS
+
+
+def test_it_opens_on_the_kerner(window):
+	plugin, _ = window
+	toolbar = plugin.w.getNSWindow().toolbar()
+	assert str(toolbar.selectedItemIdentifier()) == plugin.KERNER
+
+
+def test_with_no_tool_the_settings_pane_says_so(window):
+	"""The tool is a separate principal class and may not exist yet. The
+	fixture leaves it unloaded, so this is the pane the tests build."""
+	plugin, _ = window
+	assert hasattr(plugin.w.settingsPane, 'notLoaded')
+	assert plugin.settingsTool is None
+
+
+# --- with the tool actually there ------------------------------------------
+
+
+@pytest.fixture
+def withTool(monkeypatch):
+	"""The same window, but with a real tool for the settings pane."""
+	tool_module = _load('PKTool')
+	tool = tool_module.PolyKernTool.__new__(tool_module.PolyKernTool)
+	monkeypatch.setattr(sys.modules['PKTool'], 'mainDrawingHandler', tool,
+			raising=False)
+	NSApplication.sharedApplication()
+	font = types.SimpleNamespace(filepath='/tmp/Test.glyphs', familyName='Test',
+			glyphs=[], masters=[], selectedFontMaster=None, selectedLayers=[],
+			upm=1000)
+	monkeypatch.setattr(Glyphs, 'font', font, raising=False)
+	preset = {'Default': [('A B', 'x y', True)]}
+	monkeypatch.setitem(Glyphs.defaults, 'com.Tosche.PolyKern.presetsDic', preset)
+	plugin = kerner.PolyKernKerner.__new__(kerner.PolyKernKerner)
+	plugin.loadedPresetName = 'Default'
+	plugin.presetsDic = dict(preset)
+	plugin.buildWindow()
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	yield plugin, tool
+	plugin.w.close()
+
+
+def test_the_settings_are_built_into_the_pane(withTool):
+	plugin, tool = withTool
+	assert plugin.settingsTool is tool, 'the pane was not filled'
+	assert not hasattr(plugin.w.settingsPane, 'notLoaded')
+
+
+def test_the_tool_reaches_its_controls_through_the_pane(withTool):
+	"""Every settings method says `self.setW`. It is the pane now."""
+	plugin, tool = withTool
+	assert tool.setW is plugin.w.settingsPane
+
+
+def test_the_settings_controls_are_all_there(withTool):
+	"""The three sections the floating window used to build, unchanged."""
+	plugin, _ = withTool
+	pane = plugin.w.settingsPane
+	for named in ('previewText', 'shapeTitle', 'line0'):
+		assert hasattr(pane, named), f'{named} missing from the settings pane'
+
+
+def test_closing_the_window_saves_what_the_sliders_say(withTool):
+	"""It only hides, so the tool's own close handler never runs."""
+	plugin, tool = withTool
+	applied = []
+	type(tool).applySettings = lambda self: applied.append(True)
+	plugin.windowShouldClose_(None)
+	assert applied == [True], 'the settings were not saved on close'
+
+
+def test_the_tool_menu_opens_the_same_settings(withTool, monkeypatch):
+	"""The tool has its own Settings entry. If it opened the old standalone
+	window it would point setW at that one, leaving the pane in this window
+	looking right and driving nothing."""
+	plugin, tool = withTool
+	monkeypatch.setattr(kerner, 'mainKerner', plugin, raising=False)
+	standalone = []
+	type(tool).openSettingsWindow = lambda self: standalone.append(True)
+	tool.showSettings()
+	assert standalone == [], 'it opened the old window as well'
+	assert tool.setW is plugin.w.settingsPane
+
+
+def test_without_the_kerner_the_tool_still_has_its_own_window(withTool, monkeypatch):
+	"""The fallback. No pane exists to strand in that case."""
+	plugin, tool = withTool
+	monkeypatch.setattr(kerner, 'mainKerner', None, raising=False)
+	standalone = []
+	type(tool).openSettingsWindow = lambda self: standalone.append(True)
+	tool.showSettings()
+	assert standalone == [True]
+
+
+def test_start_publishes_the_plugin_for_the_tool_to_find():
+	source = (RESOURCES / 'PKKerner.py').read_text()
+	assert 'global mainKerner' in source and 'mainKerner = self' in source
