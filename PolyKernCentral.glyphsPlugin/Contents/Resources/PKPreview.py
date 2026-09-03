@@ -61,8 +61,20 @@ def previewEmBottom(usableHeight, lineHeight):
 
 	THE FIGURES' ROOM GOES UNDER THE LINE, so it is ADDED here, not subtracted.
 	See CLAUDE.md.
+
+	CENTRED BY EYE, NOT BY MEASURE. Centring the line together with the room
+	reserved under it puts the block in the middle to the point, and reads
+	wrong: the figures are small and faint, so what the eye centres on is the
+	word, and the word sits half that room high. Take the half back - which
+	centres the em box itself - as far as the figures can follow.
 	"""
-	return PREVIEW_FOOT_ROOM + (usableHeight - lineHeight + KERN_LABEL_ROOM) / 2.0
+	emBottom = PREVIEW_FOOT_ROOM + (usableHeight - lineHeight + KERN_LABEL_ROOM) / 2.0
+	dropped = emBottom - KERN_LABEL_ROOM / 2.0
+	# AS FAR AS THE FIGURES CAN FOLLOW: they hang this far under the line, and
+	# under the foot is the switches. When the line is too tall for even that,
+	# stay where the measured centring put it rather than climbing back up.
+	floor = PREVIEW_FOOT_ROOM + KERN_LABEL_LIFT + KERN_LABEL_DROP
+	return dropped if dropped >= floor else min(emBottom, floor)
 
 
 def kernLabelY(emBottom):

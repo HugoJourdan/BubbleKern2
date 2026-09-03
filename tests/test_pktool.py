@@ -352,6 +352,19 @@ def test_the_kern_figures_always_stand_clear_below_the_line():
 			assert labelY + lineBox <= emBottom, f'on the band at {usableHeight}'
 
 
+def test_the_line_is_centred_by_eye_not_by_measure():
+	"""Centring the line together with the room reserved for the figures under
+	it is right to the point and reads wrong: the figures are small and faint,
+	so what the eye centres on is the word, and the word sat half that room
+	high in the box. The em box itself is what gets centred."""
+	foot = preview_module.PREVIEW_FOOT_ROOM
+	for usableHeight in (120.0, 190.0, 218.0, 400.0):
+		lineHeight = (usableHeight - preview_module.KERN_LABEL_ROOM) * 0.7
+		emBottom = preview_module.previewEmBottom(usableHeight, lineHeight)
+		centred = foot + (usableHeight - lineHeight) / 2.0
+		assert emBottom == pytest.approx(centred), usableHeight
+
+
 # --- Walking a tab ----------------------------------------------------------
 # `tab.layers` has no `__len__`, and these two used to walk it by index against
 # a 4096 sentinel rather than iterate it. They iterate now, which is the part
