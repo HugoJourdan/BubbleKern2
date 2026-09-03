@@ -1950,32 +1950,41 @@ class PolyKernTool(SelectTool):
 			self.saveNodesToLayer(layer)
 			Glyphs.redraw()
 
+	@objc.python_method
+	def deleteSelectedNodes(self, layer) -> bool:
+		"""Take the selected handles out of the walls. -> True if any went.
+
+		A wall emptied this way goes back to the default straight line rather
+		than to nothing: a side with no nodes is not a side without a wall, it
+		is a side that cannot be seen or grabbed to get one back.
+		"""
+		bubbles = layer.tempData[TempDataBubblesKey]
+		if not bubbles:
+			return False
+		for selection in layer.selection:
+			for side in SIDES:
+				nodes = bubbles[side.tempKey]
+				if selection in nodes:
+					nodes.remove(selection)
+
+		# EVERY side that is now empty, not the first one found. Select the lot
+		# and Delete empties both at once, and stopping after the left is what
+		# left the right wall gone from the canvas: the reset is what puts the
+		# straight line back into tempData, and tempData is what is drawn.
+		for side in SIDES:
+			if not bubbles[side.tempKey]:
+				self.resetBubble(side.isLeft, layer=layer, save=False)
+		self.saveNodesToLayer(layer)
+		return True
+
 	def delSelectionWithModifier_(self, modifierFlag):  # Called when Delete is pressed
-		controller = self.editViewController()
 		layer = self.activeLayer
 		if layer and layer.selection:
-			bubbles = layer.tempData[TempDataBubblesKey]
-			if not bubbles:
-				return
-			for selection in layer.selection:
-				nodeL = bubbles[TempDataLeftNodesKey]
-				nodeR = bubbles[TempDataRightNodesKey]
-				if selection in nodeL:
-					nodeL.remove(selection)
-				if selection in nodeR:
-					nodeR.remove(selection)
-
-			# If a side is now empty, restore it to the default bubble
-			for side in SIDES:
-				if not bubbles[side.tempKey]:
-					self.resetBubble(side.isLeft, layer=layer)
-					return  # resetBubble already calls saveNodesToLayer and redraw
-
-			self.saveNodesToLayer(layer)
-			controller.redraw()
+			if self.deleteSelectedNodes(layer):
+				self.editViewController().redraw()
 
 	@objc.python_method
-	def resetBubble(self, isLeft, layer=None):  # RESETS ONE SIDE TO DEFAULT BUBBLE ALIGNED TO LAYER BOUNDS
+	def resetBubble(self, isLeft, layer=None, save=True):  # RESETS ONE SIDE TO DEFAULT BUBBLE ALIGNED TO LAYER BOUNDS
 		if layer is None:
 			if self.setActiveLayer() is False:
 				return
@@ -1992,8 +2001,9 @@ class PolyKernTool(SelectTool):
 		else:
 			defaultNodes = [(layerWidth, m.descender), (layerWidth, m.ascender)]
 		bubbles[key] = [makeBubbleNode(x, y, m.italicAngle, m.xHeight) for x, y in defaultNodes]
-		self.saveNodesToLayer(layer)
-		Glyphs.redraw()
+		if save:  # the caller resetting both sides saves and redraws once
+			self.saveNodesToLayer(layer)
+			Glyphs.redraw()
 
 	# FIRES AFTER NSUndoManager FINISHES AN UNDO
 	# ALWAYS FORCE-RELOADS TEMPDATA FROM USERDATA (WHICH GLYPHS HAS AUTO-RESTORED) AND REDRAWS,

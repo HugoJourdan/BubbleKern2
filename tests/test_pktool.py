@@ -501,3 +501,73 @@ def test_the_tool_sits_at_the_end_of_the_bar(sizer):
 	"""groupID: higher is further right, and the stock default is 100."""
 	source = (RESOURCES / 'PKTool.py').read_text()
 	assert 'self.toolbarPosition = 1000' in source
+
+
+# ---------------------------------------------------------------------------
+# DELETE
+#
+# A wall with no nodes left is not a side without a wall - it is a side that
+# cannot be seen or grabbed to get one back. Both sides empty at once whenever
+# the lot is selected, which is the case that used to lose the right one.
+# ---------------------------------------------------------------------------
+
+make = tool_module.makeBubbleNode
+BUBBLES, NODES_L, NODES_R = (tool_module.TempDataBubblesKey,
+		tool_module.TempDataLeftNodesKey, tool_module.TempDataRightNodesKey)
+
+
+def _walled(width=600):
+	"""A layer with a hand-drawn wall on each side, ready to be deleted from."""
+	layer = Layer('n', width, paths=1)
+	left = [make(x, y, 0, MASTER.xHeight) for x, y in ((40, 0), (60, 250), (40, 500))]
+	right = [make(x, y, 0, MASTER.xHeight) for x, y in
+			((width - 40, 0), (width - 60, 250), (width - 40, 500))]
+	layer.tempData[BUBBLES] = {NODES_L: left, NODES_R: right, 'width': width}
+	return layer
+
+
+def _xs(layer, key):
+	return [round(n.x) for n in layer.tempData[BUBBLES][key]]
+
+
+def test_deleting_one_node_leaves_the_rest_alone(tool):
+	layer = _walled()
+	layer.selection = [layer.tempData[BUBBLES][NODES_L][1]]
+	assert tool.deleteSelectedNodes(layer) is True
+	assert _xs(layer, NODES_L) == [40, 40]
+	assert len(layer.tempData[BUBBLES][NODES_R]) == 3
+
+
+def test_emptying_the_right_side_puts_a_straight_line_back(tool):
+	layer = _walled()
+	layer.selection = list(layer.tempData[BUBBLES][NODES_R])
+	tool.deleteSelectedNodes(layer)
+	right = layer.tempData[BUBBLES][NODES_R]
+	assert len(right) == 2, 'the right wall went away instead of going straight'
+	assert _xs(layer, NODES_R) == [layer.width, layer.width]
+
+
+def test_emptying_the_left_side_puts_a_straight_line_back(tool):
+	layer = _walled()
+	layer.selection = list(layer.tempData[BUBBLES][NODES_L])
+	tool.deleteSelectedNodes(layer)
+	assert _xs(layer, NODES_L) == [0, 0]
+	assert len(layer.tempData[BUBBLES][NODES_R]) == 3, 'the other side was touched'
+
+
+def test_selecting_everything_leaves_a_straight_line_on_BOTH_sides(tool):
+	"""The reported bug: the left went straight and the right disappeared."""
+	layer = _walled()
+	layer.selection = (list(layer.tempData[BUBBLES][NODES_L])
+			+ list(layer.tempData[BUBBLES][NODES_R]))
+	tool.deleteSelectedNodes(layer)
+	assert _xs(layer, NODES_L) == [0, 0]
+	assert _xs(layer, NODES_R) == [layer.width, layer.width], \
+			'the right wall was left with no nodes at all'
+
+
+def test_a_layer_with_no_bubbles_is_left_alone(tool):
+	layer = Layer('n', 600, paths=1)
+	layer.tempData[BUBBLES] = None
+	layer.selection = [object()]
+	assert tool.deleteSelectedNodes(layer) is False
