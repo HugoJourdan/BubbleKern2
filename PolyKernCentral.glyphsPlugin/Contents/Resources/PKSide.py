@@ -61,6 +61,11 @@ class Side(str):
 		return "Side('%s')" % str(self)
 
 
+# EVERY CONCEPT THE FILE FORMAT HAS FOR A SIDE. Listed here so that anything
+# clearing a side clears all of it: a hand-written key list is how `Mirror`,
+# `Box` and `Auto` came to be left behind by the whole-font remove.
+CONCEPTS = ('Nodes', 'Refer', 'Mirror', 'Box', 'Auto', 'Export')
+
 LEFT = Side('L', True, 'nodesL', 'defaultL', 'systemCyanColor')
 RIGHT = Side('R', False, 'nodesR', 'defaultR', 'systemPinkColor')
 SIDES = (LEFT, RIGHT)

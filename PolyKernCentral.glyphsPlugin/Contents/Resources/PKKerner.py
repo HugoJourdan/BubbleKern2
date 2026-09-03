@@ -121,6 +121,18 @@ class PolyKernKerner(GeneralPlugin):
 		everyMaster.setAlternate_(True)
 		submenu.addItem_(everyMaster)
 
+		clear = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			'Clear PolyKern Sides of Selected Glyphs', self.clearSelected_, '')
+		clear.setTarget_(self)
+		submenu.addItem_(clear)
+		clearEverywhere = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			'Clear PolyKern Sides of Selected Glyphs in all Masters',
+			self.clearAllMasters_, '')
+		clearEverywhere.setTarget_(self)
+		clearEverywhere.setKeyEquivalentModifierMask_(NSEventModifierFlagOption)
+		clearEverywhere.setAlternate_(True)
+		submenu.addItem_(clearEverywhere)
+
 		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('PolyKern', None, '')
 		parent.setSubmenu_(submenu)
 		Glyphs.menu[EDIT_MENU].append(parent)
@@ -161,6 +173,76 @@ class PolyKernKerner(GeneralPlugin):
 
 	def generateAllMasters_(self, sender):
 		self.generateSoon(True)
+
+	def clearSelected_(self, sender):
+		self.clearSoon(False)
+
+	def clearAllMasters_(self, sender):
+		self.clearSoon(True)
+
+	@objc.python_method
+	def clearSoon(self, allMasters):
+		# SAME REASON AS generateSoon: this puts an alert up, and raising one
+		# while AppKit is still taking the menu down deadlocks.
+		def run():
+			self.clearSides(allMasters)
+		NSOperationQueue.mainQueue().addOperationWithBlock_(run)
+
+	@objc.python_method
+	def selectedLayers(self, allMasters):
+		"""The layers a menu command works on. -> list
+
+		ONE PER SELECTED GLYPH, not per selected layer: the same glyph can sit
+		in a tab twice, and doing it twice is at best wasted work.
+		"""
+		font = Glyphs.font
+		if font is None:
+			return []
+		glyphs, seen = [], set()
+		for layer in font.selectedLayers:
+			glyph = layer.parent if isinstance(layer, GSLayer) else None
+			if glyph is not None and glyph.name not in seen:
+				seen.add(glyph.name)
+				glyphs.append(glyph)
+		masters = font.masters if allMasters else [font.selectedFontMaster]
+		layers = [glyph.layers[master.id] for glyph in glyphs for master in masters]
+		return [layer for layer in layers
+			if layer is not None and layer.name is not None]
+
+	@objc.python_method
+	def clearSides(self, allMasters):
+		"""Take PolyKern's data off the selected glyphs, both sides."""
+		try:
+			import PKBubbleStore
+			import PKTool
+			layers = self.selectedLayers(allMasters)
+			if not layers:
+				return
+			where = 'any master' if allMasters else 'this master'
+			carried = PKBubbleStore.countCarried(layers)
+			if not carried:
+				PKCommonLogic.show_alert('Nothing to Clear',
+					f'The selected glyphs carry no PolyKern data in {where}.',
+					cancel=False)
+				return
+			sides = 'side' if carried == 1 else 'sides'
+			# CANCEL FIRST, so Return cancels. Same reasoning as
+			# `askAboutExisting`, and it matters more here: there is no answer
+			# to this question that does less damage than not answering it.
+			answer = PKCommonLogic.ask_choice(
+				f'Clear {carried} PolyKern {sides}?',
+				f'The wall, any reference to another glyph, any mirror of the '
+				f'other side and the auto flag all go, across '
+				f'{"every master" if allMasters else "the current master"}. '
+				f'This can be undone.',
+				('Cancel', f'Clear {carried} {sides.title()}'))
+			if answer != 1:
+				return
+			PKBubbleStore.clearBubbles(layers)
+			if PKTool.mainDrawingHandler is not None:
+				PKTool.mainDrawingHandler.refreshAfterWrite()
+		except Exception:
+			PKCommonLogic.log(f'clearSides error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def generateSoon(self, allMasters):
@@ -204,15 +286,7 @@ class PolyKernKerner(GeneralPlugin):
 			font = Glyphs.font
 			if font is None:
 				return
-			glyphs, seen = [], set()
-			for layer in font.selectedLayers:
-				glyph = layer.parent if isinstance(layer, GSLayer) else None
-				if glyph is not None and glyph.name not in seen:
-					seen.add(glyph.name)
-					glyphs.append(glyph)
-			masters = font.masters if allMasters else [font.selectedFontMaster]
-			layers = [glyph.layers[master.id] for glyph in glyphs for master in masters]
-			layers = [layer for layer in layers if layer is not None and layer.name is not None]
+			layers = self.selectedLayers(allMasters)
 			if not layers:
 				return
 			# WHAT IS ALREADY THERE IS SOMEBODY'S WORK, and a run used to write
@@ -989,29 +1063,24 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 # Tab2 functions (remove bubble data)
 	@objc.python_method
 	def removeBubbles(self, sender):
-		try:
-			self.font
-			del self.font.userData['usePolyKern']
-			try:
-				del self.font.tempData['usePolyKern']
-			except Exception:
-				pass
+		"""Every trace of PolyKern out of the whole font.
 
-			keys = (
-				'PolyKernExportL', 'PolyKernExportR',
-				'PolyKernReferL', 'PolyKernReferR',
-				'PolyKernNodesL', 'PolyKernNodesR'
-			)
-			for g in self.font.glyphs:
-				for gl in g.layers:
-					for key in keys:
-						try:
-							del gl.userData[key]
-						except Exception:
-							pass
-					try:
-						del gl.tempData['bubbles']
-					except Exception:
-						pass
+		THROUGH THE SAME CLEARING AS THE MENU ITEM. This used to name its six
+		keys by hand and so walked past `Mirror`, `Box` and `Auto` - a font it
+		had "removed" PolyKern from still had sides mirrored and layers
+		flagged auto. It also took the font's own flag off first inside the one
+		try, so a font without that flag lost nothing at all.
+		"""
+		try:
+			import PKBubbleStore
+			for holder, key in ((self.font.userData, 'usePolyKern'),
+					(self.font.tempData, 'usePolyKern')):
+				try:
+					del holder[key]
+				except Exception:
+					pass
+			PKBubbleStore.clearBubbles(
+				[layer for glyph in self.font.glyphs for layer in glyph.layers])
 		except Exception:
-			pass
+			PKCommonLogic.log(f'removeBubbles error: {traceback.format_exc()}',
+				error=True)

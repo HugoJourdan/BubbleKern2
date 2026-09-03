@@ -22,12 +22,17 @@ RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugi
 
 
 def _load(name, as_name=None):
+	# ONCE PER SESSION, WHOEVER ASKS FIRST. Executing a module twice re-registers
+	# the ObjC classes in it - `escapableSheet` in PKKerner, `BubbleNode` in
+	# PKTool - and objc refuses the second one.
+	key = as_name or ('pk_' + name)
+	if key in sys.modules:
+		return sys.modules[key]
 	if str(RESOURCES) not in sys.path:
 		sys.path.insert(0, str(RESOURCES))
-	spec = importlib.util.spec_from_file_location(as_name or ('pk_' + name),
-			RESOURCES / (name + '.py'))
+	spec = importlib.util.spec_from_file_location(key, RESOURCES / (name + '.py'))
 	module = importlib.util.module_from_spec(spec)
-	sys.modules[as_name or ('pk_' + name)] = module
+	sys.modules[key] = module
 	spec.loader.exec_module(module)
 	return module
 

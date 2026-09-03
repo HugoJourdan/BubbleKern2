@@ -14,7 +14,7 @@ from GlyphsApp import Glyphs, GSControlLayer, GSLayer
 
 import PKAutoBubble as auto
 import PKPreview as preview
-from PKSide import LEFT, RIGHT, SIDES, of
+from PKSide import CONCEPTS, LEFT, RIGHT, SIDES, of
 from PKCommonLogic import (getFinalBubble, getKernValue, isBlankWall,
 	isMirrored, isReferenceValid, log, mergeableComposite, recordBox,
 	tempToUserNodeX)
@@ -146,6 +146,67 @@ def holdsWork(layer, side):
 	except Exception:
 		log(f'holdsWork error: {traceback.format_exc()}', error=True)
 		return False
+
+
+def carriesAnything(layer, side) -> bool:
+	"""True when this side has any PolyKern data on it at all. -> bool
+
+	Wider than `holdsWork`, deliberately. That one asks what a generate run
+	would be sorry to lose; this one asks what a clear would have to take away,
+	and an `auto` flag or a stale box is still something to take away.
+	"""
+	try:
+		return any(layer.userData[side.key(concept)] is not None
+			for concept in CONCEPTS)
+	except Exception:
+		log(f'carriesAnything error: {traceback.format_exc()}', error=True)
+		return False
+
+
+def clearSide(layer, side) -> bool:
+	"""Take every trace of one side off one layer. -> True if anything went.
+
+	ALL SIX CONCEPTS, not the ones a caller happens to remember. The cached
+	bubble goes too: it is what the canvas draws from, so a side cleared in
+	userData but left in tempData is still on screen.
+	"""
+	gone = False
+	try:
+		for concept in CONCEPTS:
+			key = side.key(concept)
+			if layer.userData[key] is not None:
+				del layer.userData[key]
+				gone = True
+	except Exception:
+		log(f'clearSide error: {traceback.format_exc()}', error=True)
+	return gone
+
+
+def clearBubbles(layers, sides=SIDES) -> int:
+	"""Clear these sides off these layers, one undo step per layer. -> sides gone"""
+	cleared = 0
+	for layer in layers:
+		glyph = getattr(layer, 'parent', None)
+		if glyph is None:
+			continue
+		glyph.beginUndo()
+		try:
+			for side in sides:
+				if clearSide(layer, side):
+					cleared += 1
+			try:
+				del layer.tempData['bubbles']  # the cache the canvas draws from
+			except Exception:
+				pass
+		finally:
+			glyph.endUndo()
+	return cleared
+
+
+def countCarried(layers, sides=SIDES) -> int:
+	"""How many of these sides have anything on them to clear. -> int"""
+	return sum(1 for layer in layers for side in sides
+		if carriesAnything(layer, side))
 
 
 def countExisting(layers, sides=SIDES):
