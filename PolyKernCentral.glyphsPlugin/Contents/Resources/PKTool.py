@@ -55,6 +55,7 @@ from PKGroupGrid import PKGroupGridView
 from PKSide import LEFT, RIGHT, SIDES, of
 from PKFields import CompletingEditText, NudgeEditText
 import PKBubbleStore as store
+import PKIcon
 from PKInfoBox import (GEAR_SYMBOL, PILL_POINT, InspectorGroup, PillGroup,
 	setPreviewGear)
 from PKCommonLogic import getKernValue
@@ -256,114 +257,30 @@ class PolyKernTool(SelectTool):
 	TOOLBAR_ICON = 'PolyKernIcon.pdf'
 	TOOLBAR_ICON_HEIGHT = 16.15  # 5% under the 17 that matched the neighbours
 	TOOLBAR_ICON_CANVAS = 22.0  # the slot Glyphs lays out for a tool icon
-	INK_SEARCH_SCALE = 4  # pixels per point while hunting for the ink
-	INK_SEARCH_FLOOR = 8  # alpha out of 255 below which a pixel is not ink
+	# WHERE THE SCAN'S OWN NUMBERS LIVE NOW. Kept here as names so anything
+	# that reads them off this class still can - PKIcon is the one definition.
+	INK_SEARCH_SCALE = PKIcon.INK_SEARCH_SCALE
+	INK_SEARCH_FLOOR = PKIcon.INK_SEARCH_FLOOR
 
 	@objc.python_method
 	def inkBounds(self, image):
 		"""The part of `image` that actually has ink in it, in points.
 
-		A PDF page is whatever the artwork happened to be drawn on and nothing
-		in the file says where the marks sit on it, so the only way to find
-		them is to draw the thing and look. -> NSRect, or None if it is blank.
+		-> NSRect, or None if it is blank. Lives in PKIcon: the window's
+		toolbar needs the same measurement for the same artwork.
 		"""
-		size = image.size()
-		scale = self.INK_SEARCH_SCALE
-		wide, high = int(round(size.width * scale)), int(round(size.height * scale))
-		if wide < 1 or high < 1:
-			return None
-		rep = NSBitmapImageRep.alloc().initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
-			None, wide, high, 8, 4, True, False, NSCalibratedRGBColorSpace, 0, 0)
-		if rep is None:
-			return None
-		context = NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep)
-		if context is None:
-			return None
-		NSGraphicsContext.saveGraphicsState()
-		try:
-			NSGraphicsContext.setCurrentContext_(context)
-			# an empty `fromRect` means all of it
-			image.drawInRect_fromRect_operation_fraction_(
-				NSMakeRect(0, 0, wide, high), NSMakeRect(0, 0, 0, 0),
-				NSCompositingOperationSourceOver, 1.0)
-		finally:
-			NSGraphicsContext.restoreGraphicsState()
-
-		stride, samples = rep.bytesPerRow(), rep.samplesPerPixel()
-		data = bytes(rep.bitmapData()[:stride * high])
-		floor = self.INK_SEARCH_FLOOR
-		left, right, top, bottom = wide, -1, high, -1
-		for y in range(high):
-			row = data[y * stride:y * stride + wide * samples]
-			alpha = row[samples - 1::samples]  # RGBA, so alpha is the last one
-			if max(alpha) <= floor:
-				continue
-			if y < top:
-				top = y
-			bottom = y
-			x = 0
-			while alpha[x] <= floor:  # the row has ink, so this cannot run off
-				x += 1
-			if x < left:
-				left = x
-			x = wide - 1
-			while alpha[x] <= floor:
-				x -= 1
-			if x > right:
-				right = x
-		if right < 0:
-			return None
-		# bitmap rows run down from the top; a PDF's y runs up from the bottom
-		return NSMakeRect(
-			left / scale,
-			size.height - (bottom + 1) / scale,
-			(right - left + 1) / scale,
-			(bottom - top + 1) / scale)
+		return PKIcon.inkBounds(image)
 
 	@objc.python_method
 	def trimmedIcon(self, image, height, canvas=None):
 		"""`image`'s ink, `height` points tall, centred on a square `canvas`.
 
-		The canvas is what does the centring - see TOOLBAR_ICON_CANVAS. It is
-		never smaller than the mark, so an oversized `height` widens the canvas
-		rather than cropping.
-
-		Drawn on demand rather than baked into a bitmap, so the artwork stays
-		vector and stays sharp at whatever the screen asks for.
+		The canvas defaults to TOOLBAR_ICON_CANVAS here, which is the slot
+		Glyphs lays out for a tool. See PKIcon.
 		"""
 		if canvas is None:
 			canvas = self.TOOLBAR_ICON_CANVAS
-		ink = self.inkBounds(image)
-		if ink is None or not ink.size.height:
-			return None
-		scale = height / ink.size.height
-		wide = ink.size.width * scale
-		size = NSMakeSize(max(canvas, wide), max(canvas, height))
-		# where the mark goes on that canvas, in the canvas's own points
-		box = NSMakeRect((size.width - wide) / 2.0, (size.height - height) / 2.0,
-				wide, height)
-
-		def drawInk(rect):
-			# `rect` is wherever the icon is being drawn, which need not be the
-			# size the canvas was cut at, so put the mark on it proportionally
-			across = rect.size.width / size.width
-			down = rect.size.height / size.height
-			image.drawInRect_fromRect_operation_fraction_(
-				NSMakeRect(rect.origin.x + box.origin.x * across,
-						rect.origin.y + box.origin.y * down,
-						box.size.width * across, box.size.height * down),
-				ink, NSCompositingOperationSourceOver, 1.0)
-			return True
-
-		icon = NSImage.imageWithSize_flipped_drawingHandler_(size, False, drawInk)
-		if icon is None:  # no drawing handler on this macOS: bake it instead
-			icon = NSImage.alloc().initWithSize_(size)
-			icon.lockFocus()
-			try:
-				drawInk(NSMakeRect(0, 0, size.width, size.height))
-			finally:
-				icon.unlockFocus()
-		return icon
+		return PKIcon.trimmedIcon(image, height, canvas)
 
 	@objc.python_method
 	def setToolbarIcon(self):

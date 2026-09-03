@@ -34,6 +34,7 @@ import PKAutoBubble
 import PKBubbleStore as store
 import PKCommonLogic
 import PKExport
+import PKIcon
 import PKRibbon
 from PKGroupGrid import PKGroupGridView
 
@@ -396,6 +397,37 @@ class PolyKernKerner(GeneralPlugin):
 	# there. A name it has never saved under has nothing to restore.
 	TOOLBAR_NAME = 'PolyKernPanes.4'
 
+	# THE ARTWORK THAT SITS AMONG THE SYMBOLS, and how tall its ink has to be
+	# to stand level with them. Measured rather than guessed: at the size the
+	# toolbar draws them, `gear` carries 13.9 points of ink and
+	# `rectangle.stack.fill` 15.
+	KERNER_ICON = 'PK_KernerIcon.pdf'
+	KERNER_ICON_INK = 14.0
+
+	@objc.python_method
+	def kernerIcon(self):
+		"""The Kerner's own artwork, sized to stand level with SF Symbols.
+
+		A SYMBOL IS SIZED BY ITS INK AND A PDF BY ITS PAGE. Handed over as it
+		is, the mark would be sized by whatever margin the export happened to
+		leave round it - 4 points top and bottom, in this one, which is a
+		tenth of the page. The ink is measured and scaled instead, so redrawing
+		the artwork does not move it.
+
+		-> NSImage, or None to let the caller fall back to a symbol.
+		"""
+		try:
+			path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+				self.KERNER_ICON)
+			artwork = NSImage.alloc().initByReferencingFile_(path)
+			if artwork is None or not artwork.isValid():
+				log(f'kernerIcon: no artwork at {path}', error=True)
+				return None
+			return PKIcon.trimmedIcon(artwork, self.KERNER_ICON_INK)
+		except Exception:
+			log(f'kernerIcon error: {traceback.format_exc()}', error=True)
+			return None
+
 	@objc.python_method
 	def addPaneToolbar(self):
 		"""The panes, as the entries of a toolbar.
@@ -412,16 +444,18 @@ class PolyKernKerner(GeneralPlugin):
 			items = [
 				dict(itemIdentifier=self.KERNER, label='Kerner',
 					toolTip='Which pairs to kern, and kerning them',
-					imageObject=symbol('text.justify.left'), imageTemplate=True,
+					# ITS OWN MARK, not a symbol that means something near it.
+					imageObject=self.kernerIcon() or symbol('text.justify.left'),
+					imageTemplate=True,
 					selectable=True, callback=self.pickKerner),
 				dict(itemIdentifier=self.GROUPS, label='Groups',
 					toolTip='Which glyphs share a wall, and what they share',
-					imageObject=symbol('square.grid.3x3'), imageTemplate=True,
+					imageObject=symbol('rectangle.stack.fill'), imageTemplate=True,
 					selectable=True, callback=self.pickGroups),
 				dict(itemIdentifier=self.SETTINGS, label='Settings',
 					toolTip='What a wall is shaped like, and what the kerner '
 						'does with it',
-					imageObject=symbol('slider.horizontal.3'), imageTemplate=True,
+					imageObject=symbol('gear'), imageTemplate=True,
 					selectable=True, callback=self.pickSettings),
 				dict(itemIdentifier=NSToolbarFlexibleSpaceItemIdentifier),
 				dict(itemIdentifier=self.EXPORT, label='PK Export',

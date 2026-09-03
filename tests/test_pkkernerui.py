@@ -931,3 +931,58 @@ def test_the_names_a_run_may_look_at(withTool):
 	font = types.SimpleNamespace(selectedLayers=[])
 	assert tool.autoGroupNames(font, False) is None
 	assert tool.autoGroupNames(font, True) == set()
+
+
+# --- The icons in the toolbar ------------------------------------------------
+
+
+def test_every_item_has_an_icon_and_no_two_share_one(window):
+	"""A symbol name that does not exist comes back None, and the item then
+	shows a blank space rather than complaining."""
+	plugin, _ = window
+	images = {}
+	for item in plugin.w.getNSWindow().toolbar().items():
+		identifier = str(item.itemIdentifier())
+		if identifier.startswith('NS'):
+			continue  # the flexible space has nothing to show
+		image = item.image()
+		assert image is not None, f'{identifier} has no icon'
+		images[identifier] = image
+	assert len(set(id(i) for i in images.values())) == len(images), 'shared icon'
+
+
+def test_the_symbol_names_are_real(window):
+	"""imageWithSystemSymbolName_ answers None to a name it does not know, so
+	a typo is a blank toolbar item and nothing else."""
+	from AppKit import NSImage
+	for name in ('gear', 'rectangle.stack.fill'):
+		assert NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+				name, None) is not None, name
+
+
+def test_the_kerner_wears_its_own_artwork(window):
+	plugin, _ = window
+	icon = plugin.kernerIcon()
+	assert icon is not None, 'PK_KernerIcon.pdf did not load'
+	assert (RESOURCES / plugin.KERNER_ICON).exists()
+
+
+def test_the_artwork_is_sized_by_its_ink_not_its_page(window):
+	"""The page is 38 points square with 4 of margin top and bottom. Handed
+	over as it is, the mark would stand a tenth shorter than the symbols."""
+	plugin, _ = window
+	icon = plugin.kernerIcon()
+	ink = _load('PKIcon', 'PKIcon').inkBounds(icon)
+	assert ink.size.height == pytest.approx(plugin.KERNER_ICON_INK, abs=0.5), ink.size
+	# AND LEVEL WITH WHAT IS BESIDE IT, which is the whole point of measuring.
+	from AppKit import NSImage
+	gear = NSImage.imageWithSystemSymbolName_accessibilityDescription_('gear', None)
+	gearInk = _load('PKIcon', 'PKIcon').inkBounds(gear)
+	assert abs(ink.size.height - gearInk.size.height) < 2.0, (ink.size, gearInk.size)
+
+
+def test_a_missing_file_falls_back_rather_than_leaving_a_hole(window,
+		monkeypatch):
+	plugin, _ = window
+	monkeypatch.setattr(plugin, 'KERNER_ICON', 'NoSuchIcon.pdf', raising=False)
+	assert plugin.kernerIcon() is None
