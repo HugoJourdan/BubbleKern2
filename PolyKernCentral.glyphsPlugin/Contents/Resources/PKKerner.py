@@ -328,11 +328,12 @@ class PolyKernKerner(GeneralPlugin):
 		windowNS = self.w.getNSWindow()
 		windowNS.setHidesOnDeactivate_(True)  # MAKE WINDOW HIDE WHILE IN BACKGROUND
 
-		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts", "Remove PolyKern Data"])
+		# NO "REMOVE POLYKERN DATA" TAB. Clearing lives in Edit > PolyKern now,
+		# where it works on a selection rather than on the whole font at once.
+		self.w.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts"])
 
 		self.buildKerningTab()
 		self.buildFontTab()
-		self.buildRemoveTab()
 
 		# LAYOUT WINDOW
 		rules = [
@@ -427,16 +428,18 @@ class PolyKernKerner(GeneralPlugin):
 
 		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
 		tab0.group1.progress.show(False)
-		# THE PAIRS THAT ACTUALLY OCCUR. A preset is a cartesian product and
-		# most of it never turns up in text; the list beside this plugin says
-		# which combinations do. It narrows the preset rather than replacing
-		# it, so the rows still decide which glyphs are in scope.
-		tab0.group1.relevantOnly = vanilla.CheckBox('auto', 'Only the most relevant pairs',
-			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)),
-			callback=self.toggleRelevantOnly, sizeStyle='small')
-		tab0.group1.relevantOnly.getNSButton().setToolTip_(
-			'Kern only the pairs that occur in running text, after André '
-			'Fuchs\u2019s kerning-pairs')
+		# THE PAIRS THAT ACTUALLY OCCUR, ON TOP OF THE PRESET'S. The rows say
+		# which glyphs are in scope and pair them exhaustively; this list says
+		# which combinations turn up in text, whatever the rows happen to
+		# cover. Added to them, not imposed on them - a row asking for
+		# something the list has never heard of is still a row somebody wrote.
+		tab0.group1.includeRelevant = vanilla.CheckBox('auto', 'Include the most relevant pairs',
+			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_INCLUDE_RELEVANT, False)),
+			callback=self.toggleIncludeRelevant, sizeStyle='small')
+		tab0.group1.includeRelevant.getNSButton().setToolTip_(
+			'Also kern the pairs that occur in running text, after André '
+			'Fuchs\u2019s kerning-pairs, whether or not the list above asks '
+			'for them')
 		# WHAT A RUN PUTS IN THE FONT, ASKED WHERE THE RUN IS STARTED - not in
 		# the settings window, which is about what a bubble is shaped like. A
 		# wall does not change because the pair it kerns was written under a
@@ -450,8 +453,8 @@ class PolyKernKerner(GeneralPlugin):
 		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.PolyKernMain)
 		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.PolyKernMain)
 		rules = [
-			'H:|-[relevantOnly]-[writeGroups]-[progress]-[allButton(==selButton)]-[selButton]-|',
-			'V:|-(12)-[relevantOnly(18)]',
+			'H:|-[includeRelevant]-[writeGroups]-[progress]-[allButton(==selButton)]-[selButton]-|',
+			'V:|-(12)-[includeRelevant(18)]',
 			'V:|-(12)-[writeGroups(18)]',
 			'V:|-(8)-[progress]-|',
 			'V:|-(8)-[allButton]-|',
@@ -496,26 +499,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			'V:|[spacer2(==spacer3)]-[caption]-(20)-[exportButton]-[getHTMLButton]-[spacer3]|',
 		]
 		tab1.addAutoPosSizeRules(rules, None)
-
-	@objc.python_method
-	def buildRemoveTab(self):
-		"""Taking every trace of PolyKern back out of the font."""
-		# REMOVE POLYKERN TAB
-		tab2 = self.w.tabs[2]
-		filepath = self.font.filepath
-		fileName = '(%s)' % re.sub('.*/', '', filepath) if filepath is not None else ''
-		tab2.message = vanilla.TextBox('auto', f"Here, you can remove PolyKern data from the font:\n\n{self.font.familyName} {fileName}")
-		tab2.button = vanilla.Button('auto', 'Remove; yes I am absolutely sure.', self.removeBubbles)
-		tab2.spacer0 = vanilla.Group('auto')
-		tab2.spacer1 = vanilla.Group('auto')
-		tab2.spacer2 = vanilla.Group('auto')
-		tab2.spacer3 = vanilla.Group('auto')
-		rules = [
-			'H:|[spacer0(==spacer1)]-[message]-[spacer1]|',
-			'H:|[spacer0(==spacer1)]-[button]-[spacer1]|',
-			'V:|[spacer2(==spacer3)]-[message]-(20)-[button]-[spacer3]|',
-		]
-		tab2.addAutoPosSizeRules(rules, None)
 
 	def showWindow_(self, sender):
 		try:
@@ -750,12 +733,12 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def toggleRelevantOnly(self, sender=None):
+	def toggleIncludeRelevant(self, sender=None):
 		try:
-			Glyphs.defaults[PKAutoBubble.PREF_RELEVANT_ONLY] = bool(sender.get())
+			Glyphs.defaults[PKAutoBubble.PREF_INCLUDE_RELEVANT] = bool(sender.get())
 			self.refreshTotal()
 		except Exception:
-			log(f'toggleRelevantOnly error: {traceback.format_exc()}', error=True)
+			log(f'toggleIncludeRelevant error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def toggleWriteGroups(self, sender=None):
@@ -765,39 +748,47 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			log(f'toggleWriteGroups error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def relevantCount(self, permutations) -> int:
-		"""How many of the preset's pairs the relevant list keeps. -> int
+	def presetPairs(self, permutations) -> set:
+		"""Every pair these rows ask for, deduped. -> {(str, str)}
 
-		Counted the same way the kerner builds them, rather than from the row
-		totals: those are a product per row, and duplicates across rows only
-		show up once the pairs are actually made.
+		THE WAY A RUN BUILDS THEM, not the sum of the Pairs column: that is a
+		product per row, and a pair two rows both name is still one pair.
+		"""
+		pairs = set()
+		for row in permutations:
+			lefts = self.cleanUpText(row['Left']) or []
+			rights = self.cleanUpText(row['Right']) or []
+			pairs.update((left, right) for left in lefts for right in rights)
+			if row['Add Flipped']:
+				pairs.update((right, left) for left in lefts for right in rights)
+		return pairs
+
+	@objc.python_method
+	def totalCount(self, permutations) -> int:
+		"""How many pairs a run would set, the relevant list included. -> int
+
+		ONE ARITHMETIC FOR BOTH ANSWERS. The two used to be counted differently
+		- a sum of the row products with the box clear, a deduped set with it
+		ticked - so ticking a box that only ever ADDS pairs could make the
+		total fall.
 		"""
 		try:
-			font = self.font
-			if font is None:
-				return 0
-			relevant = PKAutoBubble.relevant_pair_names(
-				PKCommonLogic.namesByCharacter(font))
-			pairs = set()
-			for row in permutations:
-				lefts = self.cleanUpText(row['Left'])
-				rights = self.cleanUpText(row['Right'])
-				pairs.update((left, right) for left in lefts for right in rights)
-				if row['Add Flipped']:
-					pairs.update((right, left) for left in lefts for right in rights)
-			return len(pairs & relevant)
+			pairs = self.presetPairs(permutations)
+			if bool(PKAutoBubble._pref(PKAutoBubble.PREF_INCLUDE_RELEVANT, False)):
+				font = self.font
+				if font is not None:
+					pairs |= PKAutoBubble.relevant_pair_names(
+						PKCommonLogic.namesByCharacter(font))
+			return len(pairs)
 		except Exception:
-			log(f'relevantCount error: {traceback.format_exc()}', error=True)
+			log(f'totalCount error: {traceback.format_exc()}', error=True)
 			return 0
 
 	@objc.python_method
 	def refreshTotal(self): # preview EditText
 		try:
 			permutations = self.w.tabs[0].group0.permList.get()
-			if bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)):
-				totalPairs = self.relevantCount(permutations)
-			else:
-				totalPairs = sum([int(p['Pairs']) for p in permutations])
+			totalPairs = self.totalCount(permutations)
 			self.w.tabs[0].group0.total.set(totalPairsPrefix + format(totalPairs, ','))
 		except Exception:
 			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
@@ -1060,28 +1051,3 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def getHTMLforBBLH(self, sender):
 		pass
-
-# Tab2 functions (remove bubble data)
-	@objc.python_method
-	def removeBubbles(self, sender):
-		"""Every trace of PolyKern out of the whole font.
-
-		THROUGH THE SAME CLEARING AS THE MENU ITEM. This used to name its six
-		keys by hand and so walked past `Mirror`, `Box` and `Auto` - a font it
-		had "removed" PolyKern from still had sides mirrored and layers
-		flagged auto. It also took the font's own flag off first inside the one
-		try, so a font without that flag lost nothing at all.
-		"""
-		try:
-			import PKBubbleStore
-			for holder, key in ((self.font.userData, 'usePolyKern'),
-					(self.font.tempData, 'usePolyKern')):
-				try:
-					del holder[key]
-				except Exception:
-					pass
-			PKBubbleStore.clearBubbles(
-				[layer for glyph in self.font.glyphs for layer in glyph.layers])
-		except Exception:
-			PKCommonLogic.log(f'removeBubbles error: {traceback.format_exc()}',
-				error=True)

@@ -156,7 +156,10 @@ PREF_AMPLITUDE = "com.Tosche.PolyKern.auto.amplitude"
 PREF_PREVIEW_KERN = "com.Tosche.PolyKern.previewKern"
 PREF_FOLLOW_SPACING = "com.Tosche.PolyKern.followSpacing"
 PREF_KERN_GROUPS = "com.Tosche.PolyKern.kernGroups"
-PREF_RELEVANT_ONLY = "com.Tosche.PolyKern.relevantOnly"
+# ADDS THE RELEVANT PAIRS TO THE PRESET'S, it does not narrow to them. The
+# key still says "relevantOnly" so that anyone who had it ticked keeps it
+# ticked; only what the tick does has changed.
+PREF_INCLUDE_RELEVANT = "com.Tosche.PolyKern.relevantOnly"
 PREF_PREVIEW_TEXT = "com.Tosche.PolyKern.previewText"
 PREF_PREVIEW_WALLS = "com.Tosche.PolyKern.previewWalls"
 PREF_PREVIEW_KERNED = "com.Tosche.PolyKern.previewKerned"

@@ -905,6 +905,20 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 				pairsList.extend([(R, L) for L in glyphsL for R in glyphsR if f.glyphs[L] and f.glyphs[R]])
 		pairsList = set(pairsList) # remove duplicates
 
+		# THE PAIRS THAT TURN UP IN REAL TEXT, ADDED TO THE PRESET'S OWN. A
+		# preset says which glyphs are in scope and pairs them exhaustively;
+		# this says which combinations actually occur, whatever the rows happen
+		# to cover. The two answer different questions, so the run wants both.
+		#
+		# BEFORE THE SELECTION NARROWS IT, or "Kern Pairs for Selected Glyphs"
+		# would quietly reach the whole font: the added pairs have to face the
+		# same question the preset's do. Before the groups collapse, too -
+		# after that pairsList is keyed by group name and the list is written
+		# in glyphs.
+		import PKAutoBubble
+		if bool(PKAutoBubble._pref(PKAutoBubble.PREF_INCLUDE_RELEVANT, False)):
+			pairsList |= PKAutoBubble.relevant_pair_names(namesByCharacter(f))
+
 		if selectedLayersOnly: # reduce pairList size when selected glyphs only
 			# what if glyphs are refered to outside this list?
 			selectedGlyphNames = [s.parent.name for s in f.selectedLayers]
@@ -914,19 +928,6 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		# GROUP SHARE ONE WALL, SO EVERY PAIR IN A GROUP HAS ONE ANSWER. WRITING
 		# IT ONCE COLLAPSES THE PAIR COUNT BY ROUGHLY THE SQUARE OF THE AVERAGE
 		# GROUP SIZE AND LEAVES A KERNING TABLE A PERSON CAN OPEN AND READ.
-		import PKAutoBubble
-		# ONLY THE PAIRS THAT TURN UP IN REAL TEXT, if asked. A preset is a
-		# cartesian product - uppercase against uppercase is 676 pairs - and
-		# most of those two letters never stand together in any language. This
-		# keeps the preset deciding WHICH GLYPHS are in scope and lets the list
-		# throw out the combinations nobody will ever set.
-		#
-		# BEFORE THE GROUPS COLLAPSE, because after it pairsList is keyed by
-		# group name and the list is written in glyphs.
-		if bool(PKAutoBubble._pref(PKAutoBubble.PREF_RELEVANT_ONLY, False)):
-			relevant = PKAutoBubble.relevant_pair_names(namesByCharacter(f))
-			if relevant:
-				pairsList = {pair for pair in pairsList if pair in relevant}
 		useGroups = bool(PKAutoBubble._pref(PKAutoBubble.PREF_KERN_GROUPS, False))
 		# Read ONCE: the loop below runs over every pair in the preset, and
 		# both of these come from the font's upm and a preference.
