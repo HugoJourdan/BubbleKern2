@@ -134,4 +134,112 @@ def test_the_total_counts_only_the_ticked_rows(window):
 		{'Kern': False, 'Left': 'T V W', 'Right': 'a e o', 'Add Flipped': False, 'Pairs': '9'},
 	])
 	plugin.refreshTotal()
-	assert group.total.get().endswith('4'), group.total.get()
+	total = plugin.w.tabs[0].group1.total
+	assert total.get().endswith('4'), total.get()
+
+
+# --- where the total sits, and what it says ---------------------------------
+
+
+def test_the_total_says_what_it_counts(window):
+	plugin, _ = window
+	assert plugin.w.tabs[0].group1.total.get().startswith('Total Pairs to Kern')
+
+
+def _visible(view):
+	"""What the eye sees of a control. -> NSRect
+
+	NOT ITS FRAME. A bezelled NSButton's frame is five points wider and six
+	taller than the box that gets drawn, and auto layout lines views up by the
+	drawn box - so comparing frames says two aligned views are five apart.
+	"""
+	return view.alignmentRectForFrame_(view.frame())
+
+
+def test_the_total_sits_over_the_apply_button(window):
+	"""It used to be under the list, a column away from the button that acts
+	on it. Both are in the bottom bar now, right-aligned together."""
+	plugin, _ = window
+	bar = plugin.w.tabs[0].group1
+	total = _visible(bar.total.getNSTextField())
+	button = _visible(bar.applyButton.getNSButton())
+	# the bar is not flipped, so higher on screen is a larger y
+	assert total.origin.y >= button.origin.y + button.size.height, 'not above it'
+	assert (abs((total.origin.x + total.size.width)
+			- (button.origin.x + button.size.width)) < 2), 'not aligned right'
+
+
+def test_the_total_and_the_button_are_not_touching(window):
+	plugin, _ = window
+	bar = plugin.w.tabs[0].group1
+	total = _visible(bar.total.getNSTextField())
+	button = _visible(bar.applyButton.getNSButton())
+	gap = total.origin.y - (button.origin.y + button.size.height)
+	assert 2 <= gap <= 10, f'gap of {gap}'
+
+
+def test_the_list_is_no_longer_squeezed_by_the_total(window):
+	"""group0 is the list and the preview now; nothing else."""
+	_, group = window
+	assert not hasattr(group, 'total')
+
+
+# --- the info button and its popover ----------------------------------------
+
+
+def test_there_is_an_info_button_beside_the_checkbox(window):
+	plugin, _ = window
+	bar = plugin.w.tabs[0].group1
+	assert hasattr(bar, 'infoButton')
+	check = bar.includeRelevant.getNSButton().frame()
+	info = bar.infoButton.getNSButton().frame()
+	assert info.origin.x >= check.origin.x + check.size.width - 2, 'not beside it'
+
+
+def test_the_popover_lists_every_relevant_pair(window):
+	plugin, _ = window
+	rows = plugin.relevantRows()
+	assert len(rows) == len(kerner.PKAutoBubble.relevant_pairs())
+	assert rows[0]['#'] == 1
+
+
+def test_a_space_is_spelled_out_rather_than_left_blank(window):
+	"""126 of the pairs start with one, and an empty cell reads as a bug."""
+	plugin, _ = window
+	spaced = [r for r in plugin.relevantRows() if r['Pair'][0] == ' ']
+	assert spaced, 'the list has no space-led pairs to check'
+	assert spaced[0]['Left'] == 'space'
+
+
+def test_the_blurb_says_the_list_adds_rather_than_narrows(window):
+	plugin, _ = window
+	blurb = plugin.RELEVANT_BLURB.format(count=1234)
+	assert 'ADDS' in blurb and 'does not narrow' in blurb
+	assert '1,234' in blurb, 'the count is not filled in'
+
+
+def test_the_popover_opens_and_carries_the_pairs(window):
+	"""Built for real - a bad posSize or column raises here, not in Glyphs."""
+	plugin, _ = window
+	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	popover = getattr(plugin, 'relevantPopover', None)
+	assert popover is not None, 'the popover was not built'
+	assert len(popover.pairs.get()) == len(kerner.PKAutoBubble.relevant_pairs())
+	popover.close()
+
+
+# --- the corner buttons -----------------------------------------------------
+
+
+def test_the_corner_buttons_keep_clear_of_the_corner(window):
+	"""Six points further in than they were."""
+	_, group = window
+	listView = group.permList.getNSScrollView()
+	bounds = listView.bounds()
+	frame = listView.convertRect_fromView_(
+		group.delButton.getNSButton().frame(), group.delButton.getNSButton().superview())
+	right = bounds.origin.x + bounds.size.width - (frame.origin.x + frame.size.width)
+	below = bounds.origin.y + bounds.size.height - (frame.origin.y + frame.size.height)
+	assert right == pytest.approx(kerner.PolyKernKerner.LIST_BUTTON_INSET)
+	assert below == pytest.approx(kerner.PolyKernKerner.LIST_BUTTON_INSET)
+	assert kerner.PolyKernKerner.LIST_BUTTON_INSET >= 12

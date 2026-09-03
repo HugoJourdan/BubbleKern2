@@ -28,7 +28,7 @@ import PKAutoBubble
 import PKCommonLogic
 import PKExport
 
-totalPairsPrefix = 'Total Pairs To Check : '
+totalPairsPrefix = 'Total Pairs to Kern : '
 
 # Vanilla.Sheet which can be closed upon esc key press
 class escapableSheet(vanilla.Sheet):
@@ -418,8 +418,6 @@ class PolyKernKerner(GeneralPlugin):
 
 		tab0.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
 		tab0.group0.preview._textView.setFont_(Menlo12)
-		tab0.group0.total = vanilla.TextBox('auto', totalPairsPrefix, alignment="right", sizeStyle="small")
-
 		# ADD & DELETE BUTTONS:
 		plusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("plus", None)
 		tab0.group0.addButton = vanilla.ImageButton('auto', imageObject=plusImage, callback=self.addButton)
@@ -432,11 +430,10 @@ class PolyKernKerner(GeneralPlugin):
 		rules = [
 			'H:|-[optionsPopup]',
 			'H:|-[permList(>=600)][preview(200)]-|',
-			'H:|-[total][preview]',
-			'V:|[optionsPopup]-[permList(>=100)]-(8)-[total(iconButtonH)]|',
-			'V:[optionsPopup]-[preview]-(8)-[total]',
+			'V:|[optionsPopup]-[permList(>=100)]-|',
+			'V:[optionsPopup]-[preview]-|',
 		]
-		metrics = {'iconButtonH': 24}
+		metrics = {}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
 		self.pinListButtons(tab0.group0)
 
@@ -456,13 +453,35 @@ class PolyKernKerner(GeneralPlugin):
 			'for them')
 		# ONE BUTTON. What a run covers is decided in the list now - the Kern
 		# column - rather than by which of two buttons was pressed.
+		# WHAT THE LIST IS, FOR ANYONE WHO HAS NOT MET IT. A tooltip can say a
+		# sentence; this one needs a paragraph and the 3,736 pairs themselves.
+		infoImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+			"info.circle", None)
+		tab0.group1.infoButton = vanilla.ImageButton('auto', imageObject=infoImage,
+			bordered=False, callback=self.showRelevantPairs)
+		tab0.group1.infoButton.getNSButton().setToolTip_(
+			'What the most relevant pairs are, and which ones they are')
+
 		tab0.group1.applyButton = vanilla.Button('auto', "Apply Kerning",
 			sizeStyle="regular", callback=self.PolyKernMain)
+		# DIRECTLY OVER THE BUTTON IT DESCRIBES. It used to sit under the list,
+		# a column away from the button that acts on it.
+		tab0.group1.total = vanilla.TextBox('auto', totalPairsPrefix,
+			alignment="right", sizeStyle="small")
+		# ONE CHAIN TOP TO BOTTOM, AND ONE ONLY. The bar has no height of its
+		# own beyond what its rules give it, so something must reach the bottom
+		# or it collapses to nothing; but two chains pinned at both ends have
+		# to agree on the height to the point, and when they cannot auto layout
+		# breaks one and drops the view where it likes. The total and the
+		# button it counts for are that chain. Everything else hangs from the
+		# top and stops.
 		rules = [
-			'H:|-[includeRelevant]-[progress]-[applyButton]-|',
-			'V:|-(12)-[includeRelevant(18)]',
-			'V:|-(8)-[progress]-|',
-			'V:|-(8)-[applyButton]-|',
+			'H:|-[includeRelevant]-[infoButton(18)]-[progress]-[applyButton]-|',
+			'H:[total]-|',
+			'V:|-(6)-[total(14)]-(4)-[applyButton(30)]-(8)-|',
+			'V:|-(30)-[includeRelevant(18)]',
+			'V:|-(30)-[infoButton(18)]',
+			'V:|-(28)-[progress]',
 		]
 		tab0.group1.addAutoPosSizeRules(rules, metrics)
 
@@ -475,7 +494,7 @@ class PolyKernKerner(GeneralPlugin):
 
 	# SMALL ENOUGH TO SIT ON THE LIST WITHOUT COVERING A ROW.
 	LIST_BUTTON_W, LIST_BUTTON_H = 26.0, 20.0
-	LIST_BUTTON_INSET, LIST_BUTTON_GAP = 6.0, 3.0
+	LIST_BUTTON_INSET, LIST_BUTTON_GAP = 12.0, 3.0
 
 	@objc.python_method
 	def pinListButtons(self, group):
@@ -776,6 +795,57 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		except Exception:
 			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
 
+	RELEVANT_BLURB = (
+		"The pairs that actually turn up in running text, from André Fuchs\u2019s "
+		"kerning-pairs list \u2014 {count:,} of them, best first.\n\n"
+		"A row in the list above pairs every glyph on the left with every glyph "
+		"on the right, so it asks for combinations no language ever sets. This "
+		"list is the other way round: it names the combinations that do occur, "
+		"whatever the rows happen to cover. Ticking the box ADDS them to what "
+		"the rows ask for \u2014 it does not narrow the rows.")
+
+	# CLASS DEFAULTS, so an attribute lookup finds these rather than inventing
+	# something. The plugin's base class answers to names it has never heard of.
+	_relevantRows = None
+	relevantPopover = None
+
+	@objc.python_method
+	def relevantRows(self):
+		"""The whole list, ready for a table. -> [dict]
+
+		Built once. A space is a pair half like any other - 126 of them start
+		with one - and an empty cell would read as a missing pair, so it is
+		spelled out.
+		"""
+		if self._relevantRows is None:
+			def show(character):
+				return {' ': 'space', '\u00a0': 'nbspace'}.get(character, character)
+			self._relevantRows = [
+				{'#': index, 'Left': show(pair[0]), 'Right': show(pair[1]),
+					'Pair': pair}
+				for index, pair in enumerate(PKAutoBubble.relevant_pairs(), 1)]
+		return self._relevantRows
+
+	@objc.python_method
+	def showRelevantPairs(self, sender):
+		"""A popover explaining the list, with the list in it."""
+		try:
+			rows = self.relevantRows()
+			popover = vanilla.Popover((380, 460))
+			popover.blurb = vanilla.TextBox((16, 14, -16, 106),
+				self.RELEVANT_BLURB.format(count=len(rows)), sizeStyle='small')
+			popover.pairs = vanilla.List2((16, 128, -16, -16), rows,
+				columnDescriptions=[
+					{"title": "#", "identifier": "#", "width": 50},
+					{"title": "Left", "identifier": "Left", "width": 60},
+					{"title": "Right", "identifier": "Right", "width": 60},
+				],
+				allowsEmptySelection=True, autohidesScrollers=True)
+			popover.open(parentView=sender, preferredEdge='top')
+			self.relevantPopover = popover  # or it is collected while open
+		except Exception:
+			log(f'showRelevantPairs error: {traceback.format_exc()}', error=True)
+
 	@objc.python_method
 	def toggleIncludeRelevant(self, sender=None):
 		try:
@@ -828,7 +898,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			permutations = self.w.tabs[0].group0.permList.get()
 			totalPairs = self.totalCount(permutations)
-			self.w.tabs[0].group0.total.set(totalPairsPrefix + format(totalPairs, ','))
+			self.w.tabs[0].group1.total.set(totalPairsPrefix + format(totalPairs, ','))
 		except Exception:
 			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
 
