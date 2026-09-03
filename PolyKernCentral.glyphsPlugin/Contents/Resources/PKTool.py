@@ -35,6 +35,10 @@ from Cocoa import (
 	NSStackView,  # the row Glyphs keeps the info box in
 	NSImage,  # the gear on the preview's own switches
 	NSImageOnly,  # the gear is the whole of both menu buttons
+	NSBitmapImageRep,  # to draw the toolbar artwork somewhere I can measure it
+	NSGraphicsContext,  # ditto
+	NSCompositingOperationSourceOver,  # ditto
+	NSCalibratedRGBColorSpace,  # ditto
 )
 
 import os  # to find the toolbar icon beside this file
@@ -230,16 +234,109 @@ bubbleDrawingIsActive = False  # True if I want to draw all the time
 class PolyKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
 
-	# THE ICON IS 17 POINTS TALL WHATEVER THE ARTWORK IS, and the PDF is
-	# TRIMMED TO ITS INK so that those 17 points are all mark. Glyphs draws a
-	# tool icon at the image's own size and does not fit it to the bar, so
-	# padding inside the artwork comes straight off what you see: the first
-	# cut of this file was 56x81 with the mark filling 65% of the height, and
-	# at 18 points tall it drew 12 points of ink beside neighbours drawing 15
-	# to 18. Measured off the toolbar: the text tool 15, annotate 15.5, the
-	# hand 18.
+	# THE MARK IS 17 POINTS TALL WHATEVER THE ARTWORK IS - the mark, not the
+	# page it was drawn on. Glyphs draws a tool icon at the image's own size
+	# and neither fits it to the bar nor distorts it: an 18 point image whose
+	# ink filled 65% of its page drew 12 points of mark, and kept its
+	# proportions doing it (23x24 screen pixels for an ink box of 49.6x53).
+	# So every millimetre of margin in the PDF comes straight off what you
+	# see. Rather than demand trimmed artwork - a rule nobody remembers a year
+	# later, and one that leaves the mark off centre when the margins are
+	# uneven - `setToolbarIcon` finds the ink itself and draws only that.
+	# Neighbours to match: the text tool 15 points, annotate 15.5, the hand 18.
 	TOOLBAR_ICON = 'PolyKernIcon.pdf'
 	TOOLBAR_ICON_HEIGHT = 17.0
+	INK_SEARCH_SCALE = 4  # pixels per point while hunting for the ink
+	INK_SEARCH_FLOOR = 8  # alpha out of 255 below which a pixel is not ink
+
+	@objc.python_method
+	def inkBounds(self, image):
+		"""The part of `image` that actually has ink in it, in points.
+
+		A PDF page is whatever the artwork happened to be drawn on and nothing
+		in the file says where the marks sit on it, so the only way to find
+		them is to draw the thing and look. -> NSRect, or None if it is blank.
+		"""
+		size = image.size()
+		scale = self.INK_SEARCH_SCALE
+		wide, high = int(round(size.width * scale)), int(round(size.height * scale))
+		if wide < 1 or high < 1:
+			return None
+		rep = NSBitmapImageRep.alloc().initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel_(
+			None, wide, high, 8, 4, True, False, NSCalibratedRGBColorSpace, 0, 0)
+		if rep is None:
+			return None
+		context = NSGraphicsContext.graphicsContextWithBitmapImageRep_(rep)
+		if context is None:
+			return None
+		NSGraphicsContext.saveGraphicsState()
+		try:
+			NSGraphicsContext.setCurrentContext_(context)
+			# an empty `fromRect` means all of it
+			image.drawInRect_fromRect_operation_fraction_(
+				NSMakeRect(0, 0, wide, high), NSMakeRect(0, 0, 0, 0),
+				NSCompositingOperationSourceOver, 1.0)
+		finally:
+			NSGraphicsContext.restoreGraphicsState()
+
+		stride, samples = rep.bytesPerRow(), rep.samplesPerPixel()
+		data = bytes(rep.bitmapData()[:stride * high])
+		floor = self.INK_SEARCH_FLOOR
+		left, right, top, bottom = wide, -1, high, -1
+		for y in range(high):
+			row = data[y * stride:y * stride + wide * samples]
+			alpha = row[samples - 1::samples]  # RGBA, so alpha is the last one
+			if max(alpha) <= floor:
+				continue
+			if y < top:
+				top = y
+			bottom = y
+			x = 0
+			while alpha[x] <= floor:  # the row has ink, so this cannot run off
+				x += 1
+			if x < left:
+				left = x
+			x = wide - 1
+			while alpha[x] <= floor:
+				x -= 1
+			if x > right:
+				right = x
+		if right < 0:
+			return None
+		# bitmap rows run down from the top; a PDF's y runs up from the bottom
+		return NSMakeRect(
+			left / scale,
+			size.height - (bottom + 1) / scale,
+			(right - left + 1) / scale,
+			(bottom - top + 1) / scale)
+
+	@objc.python_method
+	def trimmedIcon(self, image, height):
+		"""`image` cropped to its ink and scaled until that ink is `height` tall.
+
+		Drawn on demand rather than baked into a bitmap, so the artwork stays
+		vector and stays sharp at whatever the screen asks for.
+		"""
+		ink = self.inkBounds(image)
+		if ink is None or not ink.size.height:
+			return None
+		scale = height / ink.size.height
+		size = NSMakeSize(ink.size.width * scale, height)
+
+		def drawInk(rect):
+			image.drawInRect_fromRect_operation_fraction_(
+				rect, ink, NSCompositingOperationSourceOver, 1.0)
+			return True
+
+		icon = NSImage.imageWithSize_flipped_drawingHandler_(size, False, drawInk)
+		if icon is None:  # no drawing handler on this macOS: bake it instead
+			icon = NSImage.alloc().initWithSize_(size)
+			icon.lockFocus()
+			try:
+				drawInk(NSMakeRect(0, 0, size.width, size.height))
+			finally:
+				icon.unlockFocus()
+		return icon
 
 	@objc.python_method
 	def setToolbarIcon(self):
@@ -250,18 +347,17 @@ class PolyKernTool(SelectTool):
 		size it and cannot make it a template - and the artwork is white, so
 		untinted it is invisible against a light toolbar.
 
-		A REPLACEMENT PDF HAS TO BE TRIMMED TO ITS INK, or it draws small: see
-		TOOLBAR_ICON_HEIGHT.
+		The artwork needs no preparation: whatever margins it carries are
+		measured off and ignored. See TOOLBAR_ICON_HEIGHT.
 		"""
 		try:
 			path = os.path.join(os.path.dirname(self.__file__()), self.TOOLBAR_ICON)
-			icon = NSImage.alloc().initByReferencingFile_(path)
-			if icon is None or not icon.isValid():
+			artwork = NSImage.alloc().initByReferencingFile_(path)
+			if artwork is None or not artwork.isValid():
 				return
-			size = icon.size()
-			if size.height:
-				scale = self.TOOLBAR_ICON_HEIGHT / size.height
-				icon.setSize_(NSMakeSize(size.width * scale, self.TOOLBAR_ICON_HEIGHT))
+			icon = self.trimmedIcon(artwork, self.TOOLBAR_ICON_HEIGHT)
+			if icon is None:
+				return
 			self._icon = None  # required before Glyphs 3.4 (3416)
 			self.tool_bar_image = icon
 			# Glyphs 4 only calls setTemplate_ when self._icon is truthy, and the
@@ -285,7 +381,11 @@ class PolyKernTool(SelectTool):
 		})
 		self.keyboardShortcutModifier = (NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption)
 		self.keyboardShortcut = 'b'
-		self.toolbarPosition = 20
+		# LAST IN THE BAR. SelectTool hands this straight to groupID(), whose
+		# contract is "higher values are further to the right", and it sorts
+		# against Glyphs' own tools rather than after them - at 20 this sat
+		# between the text tool and annotate. The stock default is 100.
+		self.toolbarPosition = 1000
 		self.setToolbarIcon()
 		self.horizontal = getattr(self, "horizontal", True)  # whether horizontal or vertical bubbles
 		self.closestNode = None  # for highlighting the addable node

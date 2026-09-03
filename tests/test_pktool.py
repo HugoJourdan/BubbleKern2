@@ -372,3 +372,102 @@ def test_a_layer_is_found_at_its_own_place_in_the_tab():
 	tab = Tab([a, GSControlLayer(), v])  # the break counts as a position
 	assert store_module.tabIndexOf(tab, v) == 2
 	assert store_module.tabIndexOf(tab, _tabGlyph('o')) is None
+
+
+# ---------------------------------------------------------------------------
+# THE TOOLBAR ICON
+#
+# Glyphs draws a tool icon at the image's own size, so the artwork's margins
+# come off the mark. These check that the margins are measured away rather than
+# demanded of whoever draws the next icon.
+# ---------------------------------------------------------------------------
+
+from Foundation import NSMakeSize  # noqa: E402
+from AppKit import NSImage, NSColor, NSRectFill  # noqa: E402
+
+Tool = tool_module.PolyKernTool
+ARTWORK = RESOURCES / Tool.TOOLBAR_ICON
+
+
+class _Sizer:
+	"""Stands in for the tool: the icon methods only want these three numbers."""
+	INK_SEARCH_SCALE = Tool.INK_SEARCH_SCALE
+	INK_SEARCH_FLOOR = Tool.INK_SEARCH_FLOOR
+	TOOLBAR_ICON_HEIGHT = Tool.TOOLBAR_ICON_HEIGHT
+	inkBounds = Tool.inkBounds
+	trimmedIcon = Tool.trimmedIcon
+
+
+@pytest.fixture
+def sizer():
+	return _Sizer()
+
+
+def _painted(page, ink):
+	"""An image `page` big with one solid rectangle `ink` in it. -> NSImage"""
+	image = NSImage.alloc().initWithSize_(NSMakeSize(*page))
+	image.lockFocus()
+	NSColor.blackColor().set()
+	NSRectFill(NSMakeRect(*ink))
+	image.unlockFocus()
+	return image
+
+
+def test_the_ink_is_found_where_it_was_painted(sizer):
+	found = sizer.inkBounds(_painted((40, 40), (5, 8, 10, 20)))
+	assert found is not None
+	got = (found.origin.x, found.origin.y, found.size.width, found.size.height)
+	assert got == pytest.approx((5, 8, 10, 20), abs=0.5)
+
+
+def test_a_blank_page_has_no_ink(sizer):
+	assert sizer.inkBounds(NSImage.alloc().initWithSize_(NSMakeSize(20, 20))) is None
+
+
+def test_ink_that_fills_the_page_is_the_page(sizer):
+	found = sizer.inkBounds(_painted((16, 24), (0, 0, 16, 24)))
+	assert (found.size.width, found.size.height) == pytest.approx((16, 24), abs=0.5)
+
+
+def test_the_shipped_artwork_has_margins_to_lose(sizer):
+	"""If this ever fails the artwork was trimmed - which is fine, but then the
+	sizing below is no longer being exercised on anything."""
+	artwork = NSImage.alloc().initByReferencingFile_(str(ARTWORK))
+	page, ink = artwork.size(), sizer.inkBounds(artwork)
+	assert ink.size.height < page.height, 'artwork already trimmed vertically'
+
+
+def test_the_icon_is_the_asked_for_height(sizer):
+	icon = sizer.trimmedIcon(_painted((40, 40), (5, 8, 10, 20)), 17.0)
+	assert icon.size().height == pytest.approx(17.0)
+
+
+def test_the_icon_is_sized_off_the_ink_not_the_page(sizer):
+	"""The whole point. Same mark, twice the page: the same icon either way."""
+	tight = sizer.trimmedIcon(_painted((10, 20), (0, 0, 10, 20)), 17.0)
+	padded = sizer.trimmedIcon(_painted((60, 80), (25, 30, 10, 20)), 17.0)
+	assert tight.size().width == pytest.approx(padded.size().width, abs=0.5)
+	assert tight.size().height == pytest.approx(padded.size().height, abs=0.5)
+
+
+def test_the_icon_keeps_the_proportions_of_the_mark(sizer):
+	artwork = NSImage.alloc().initByReferencingFile_(str(ARTWORK))
+	ink = sizer.inkBounds(artwork)
+	icon = sizer.trimmedIcon(artwork, Tool.TOOLBAR_ICON_HEIGHT)
+	assert (icon.size().width / icon.size().height ==
+			pytest.approx(ink.size.width / ink.size.height, rel=0.02))
+
+
+def test_the_finished_icon_is_all_mark(sizer):
+	"""Measured again, the icon has no margin left anywhere."""
+	icon = sizer.trimmedIcon(NSImage.alloc().initByReferencingFile_(str(ARTWORK)),
+			Tool.TOOLBAR_ICON_HEIGHT)
+	ink = sizer.inkBounds(icon)
+	assert ink.size.height == pytest.approx(icon.size().height, abs=0.5)
+	assert ink.size.width == pytest.approx(icon.size().width, abs=0.5)
+
+
+def test_the_tool_sits_at_the_end_of_the_bar(sizer):
+	"""groupID: higher is further right, and the stock default is 100."""
+	source = (RESOURCES / 'PKTool.py').read_text()
+	assert 'self.toolbarPosition = 1000' in source
