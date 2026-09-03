@@ -302,13 +302,43 @@ def test_every_pane_exists(window):
 		assert hasattr(plugin.w, name), name
 
 
-def test_the_toolbar_offers_every_pane_in_order(window):
+def test_the_toolbar_offers_every_pane_with_the_export_held_out(window):
+	"""The three that are part of kerning something sit together on the left;
+	the experimental export is pushed to the far end by a flexible space."""
 	plugin, _ = window
 	toolbar = plugin.w.getNSWindow().toolbar()
 	assert toolbar is not None, 'no toolbar'
 	names = [str(i.itemIdentifier()) for i in toolbar.items()]
-	assert names == [plugin.KERNER, plugin.GROUPS, plugin.EXPORT,
-			plugin.SETTINGS], names
+	assert names == [plugin.KERNER, plugin.GROUPS, plugin.SETTINGS,
+			'NSToolbarFlexibleSpaceItem', plugin.EXPORT], names
+
+
+def test_the_items_are_not_centred(window):
+	"""`preference` centres them, which is what they were. `expanded` keeps
+	the same two rows and puts them along the left."""
+	from AppKit import NSWindowToolbarStyleExpanded, NSWindowToolbarStylePreference
+	plugin, _ = window
+	style = plugin.w.getNSWindow().toolbarStyle()
+	assert style != NSWindowToolbarStylePreference, 'still centred'
+	assert style == NSWindowToolbarStyleExpanded, style
+
+
+def test_the_export_item_says_which_export_it_is(window):
+	plugin, _ = window
+	item = {str(i.itemIdentifier()): i for i in
+			plugin.w.getNSWindow().toolbar().items()}[plugin.EXPORT]
+	assert str(item.label()) == 'PK Export'
+
+
+def test_the_item_set_cannot_be_saved_over(window):
+	"""NSToolbar autosaves which items are in it, and a saved set WINS over
+	the delegate's - which is how somebody who opened the two-item version
+	would go on seeing two items. Nothing to save, nothing to restore."""
+	plugin, _ = window
+	toolbar = plugin.w.getNSWindow().toolbar()
+	assert not toolbar.autosavesConfiguration()
+	assert not toolbar.allowsUserCustomization()
+	assert plugin.TOOLBAR_NAME != 'PolyKernPanes', 'the name the old set saved under'
 
 
 def test_showing_one_pane_hides_the_rest(window):
@@ -671,3 +701,96 @@ def test_the_caption_counts_a_glyph_on_both_sides_once():
 		{'name': 'n', 'members': ['n', 'o', 'c']},
 	])
 	assert said.startswith('2 groups, 4 glyphs'), said
+
+
+# --- The BETA ribbon ---------------------------------------------------------
+# The export writes a table nothing shipping reads yet. The pane said so in a
+# paragraph, which is a thing read once.
+
+
+def _ribbonPane(plugin):
+	return plugin.w.exportPane.getNSView()
+
+
+def test_the_export_pane_carries_a_ribbon(window):
+	plugin, _ = window
+	ribbon = plugin.exportRibbon
+	assert ribbon is not None
+	assert type(ribbon).__name__ == 'PKRibbonView'
+	assert ribbon._word == 'BETA'
+
+
+def test_it_sits_in_the_top_right_corner(window):
+	plugin, _ = window
+	plugin.showPane(plugin.EXPORT)
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	pane = _ribbonPane(plugin)
+	frame = plugin.exportRibbon.frame()
+	assert frame.origin.x + frame.size.width == pytest.approx(
+			pane.frame().size.width), 'not against the right edge'
+	high = (frame.origin.y if pane.isFlipped()
+			else pane.frame().size.height - (frame.origin.y + frame.size.height))
+	assert high == pytest.approx(0), f'{high} points down from the top'
+
+
+def test_it_is_drawn_over_everything_the_rules_placed(window):
+	plugin, _ = window
+	assert list(_ribbonPane(plugin).subviews())[-1] is plugin.exportRibbon
+
+
+def test_it_does_not_swallow_clicks(window):
+	"""It lies over the corner of a pane and answers to nothing."""
+	plugin, _ = window
+	ribbon = plugin.exportRibbon
+	middle = ribbon.frame()
+	assert ribbon.hitTest_((middle.origin.x + 4, middle.origin.y + 4)) is None
+
+
+def test_the_word_fits_on_the_band():
+	"""The band's centre line is what there is to write on. Raise the type
+	size or lengthen the word and it runs off both ends without a sound."""
+	from AppKit import (NSAttributedString, NSColor, NSFont, NSFontAttributeName,
+			NSFontWeightBold, NSForegroundColorAttributeName, NSKernAttributeName)
+	# UNDER ITS PLAIN NAME: PKKerner imported it that way, and executing the
+	# file twice re-registers the ObjC class in it.
+	ribbon = _load('PKRibbon', 'PKRibbon')
+	assert ribbon.RIBBON_OUTER < ribbon.RIBBON_SIZE, 'the band runs off the view'
+	centre = (ribbon.RIBBON_INNER + ribbon.RIBBON_OUTER) / 2.0
+	along = centre * (2 ** 0.5)
+	label = NSAttributedString.alloc().initWithString_attributes_('BETA', {
+		NSFontAttributeName: NSFont.systemFontOfSize_weight_(
+			ribbon.RIBBON_TEXT, NSFontWeightBold),
+		NSForegroundColorAttributeName: NSColor.blackColor(),
+		NSKernAttributeName: ribbon.RIBBON_TRACKING,
+	})
+	assert label.size().width < along - 8, f'{label.size().width} on {along}'
+	# AND THE BAND IS THICK ENOUGH FOR IT, measured across rather than along.
+	thickness = (ribbon.RIBBON_OUTER - ribbon.RIBBON_INNER) / (2 ** 0.5)
+	assert thickness > label.size().height, f'{thickness} for {label.size().height}'
+
+
+def test_the_caption_is_wide_enough_not_to_wrap(window):
+	"""It is written in lines that are meant to stay lines - numbered steps,
+	and a Terminal command that reads badly broken in half. Lengthen the text
+	past the box and it wraps with nothing said about it."""
+	plugin, _ = window
+	field = plugin.w.exportPane.caption.getNSTextField()
+	natural = field.cell().cellSizeForBounds_(((0, 0), (10000, 10000))).width
+	assert plugin.CAPTION_WIDTH >= natural, f'{natural:.0f} into {plugin.CAPTION_WIDTH}'
+	assert plugin.CAPTION_WIDTH < plugin.WINDOW_SIZE[0] - 100, 'no room either side'
+
+
+def test_the_caption_and_the_buttons_are_spaced_apart(window):
+	"""They shared a pair of spacers, which cannot hold two different widths
+	at once: something has to give, and what gives is the pair being equal -
+	so the buttons come out off to one side."""
+	plugin, _ = window
+	plugin.showPane(plugin.EXPORT)
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	pane = plugin.w.exportPane.getNSView().frame()
+	for name in ('caption', 'exportButton', 'getHTMLButton'):
+		control = getattr(plugin.w.exportPane, name)._nsObject
+		frame = control.frame()
+		middle = frame.origin.x + frame.size.width / 2.0
+		assert middle == pytest.approx(pane.size.width / 2.0, abs=1.0), \
+				f'{name} centred at {middle:.0f} of {pane.size.width:.0f}'

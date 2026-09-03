@@ -26,6 +26,7 @@ from AppKit import (
 	NSFontAttributeName,
 	NSStringDrawingUsesLineFragmentOrigin,
 	NSViewWidthSizable,  # to keep the group grid as wide as it is scrolled in
+	NSToolbarFlexibleSpaceItemIdentifier,  # to hold the export item out right
 )
 from Foundation import NSMakeRect, NSMakeSize
 
@@ -33,6 +34,7 @@ import PKAutoBubble
 import PKBubbleStore as store
 import PKCommonLogic
 import PKExport
+import PKRibbon
 from PKGroupGrid import PKGroupGridView
 
 totalPairsPrefix = 'Total Pairs to Kern : '
@@ -387,9 +389,22 @@ class PolyKernKerner(GeneralPlugin):
 		self.addPaneToolbar()
 		self.showPane(self.KERNER)
 
+	# BUMP THIS WHENEVER THE ITEMS CHANGE. NSToolbar autosaves which items are
+	# in it against this name, and a saved configuration WINS over the ones the
+	# delegate offers - so anybody who had opened the two-item version would
+	# have gone on seeing two items, and the new panes would simply not be
+	# there. A name it has never saved under has nothing to restore.
+	TOOLBAR_NAME = 'PolyKernPanes.4'
+
 	@objc.python_method
 	def addPaneToolbar(self):
-		"""Kerner, Export and Settings, as the entries of a preferences toolbar."""
+		"""The panes, as the entries of a toolbar.
+
+		LEFT ALIGNED, WITH THE EXPORT HELD OUT TO THE RIGHT. The three that are
+		part of kerning something sit together; the experimental font export is
+		put where nothing is next to it. `preference` style would centre the
+		lot, so the style is `expanded`: same two rows, items along the left.
+		"""
 		try:
 			def symbol(name):
 				return NSImage.imageWithSystemSymbolName_accessibilityDescription_(
@@ -403,19 +418,27 @@ class PolyKernKerner(GeneralPlugin):
 					toolTip='Which glyphs share a wall, and what they share',
 					imageObject=symbol('square.grid.3x3'), imageTemplate=True,
 					selectable=True, callback=self.pickGroups),
-				dict(itemIdentifier=self.EXPORT, label='Export',
-					toolTip='Generate a font with the walls baked into it as '
-						'a BBLH table',
-					imageObject=symbol('square.and.arrow.up'), imageTemplate=True,
-					selectable=True, callback=self.pickExport),
 				dict(itemIdentifier=self.SETTINGS, label='Settings',
 					toolTip='What a wall is shaped like, and what the kerner '
 						'does with it',
 					imageObject=symbol('slider.horizontal.3'), imageTemplate=True,
 					selectable=True, callback=self.pickSettings),
+				dict(itemIdentifier=NSToolbarFlexibleSpaceItemIdentifier),
+				dict(itemIdentifier=self.EXPORT, label='PK Export',
+					toolTip='Generate a font with the walls baked into it as '
+						'a BBLH table',
+					imageObject=symbol('square.and.arrow.up'), imageTemplate=True,
+					selectable=True, callback=self.pickExport),
 			]
-			self.w.addToolbar('PolyKernPanes', items, addStandardItems=False,
-				displayMode='iconLabel', toolbarStyle='preference')
+			self.w.addToolbar(self.TOOLBAR_NAME, items, addStandardItems=False,
+				displayMode='iconLabel', toolbarStyle='expanded')
+			# NOT THE USER'S TO REARRANGE. It picks which pane is showing, and
+			# a pane picker missing a pane is a feature that has vanished.
+			# With customising off there is nothing to save either.
+			toolbar = self.w.getNSWindow().toolbar()
+			if toolbar is not None:
+				toolbar.setAllowsUserCustomization_(False)
+				toolbar.setAutosavesConfiguration_(False)
 		except Exception:
 			log(f'addPaneToolbar error: {traceback.format_exc()}', error=True)
 
@@ -771,6 +794,10 @@ class PolyKernKerner(GeneralPlugin):
 		except Exception:
 			log(f'pinListButtons error: {traceback.format_exc()}', error=True)
 
+	# WIDE ENOUGH FOR THE LONGEST LINE THE CAPTION HAS. Under it the paragraph
+	# wraps, and it is written in lines that are meant to stay lines.
+	CAPTION_WIDTH = 600
+
 	@objc.python_method
 	def buildExportPane(self):
 		"""Exporting a font with the bubbles baked in as BBLH."""
@@ -793,19 +820,58 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		pane.spacer1 = vanilla.Group('auto')
 		pane.spacer2 = vanilla.Group('auto')
 		pane.spacer3 = vanilla.Group('auto')
-		# THE BUTTONS ARE GIVEN A WIDTH, because without one they have no
-		# settled width at all. A button between two spacers that are only
-		# said to equal each other leaves auto layout a free choice - nothing
-		# here has an intrinsic width to prefer - and it takes it differently
-		# from run to run: the same rules measured 214 points wide in one
-		# process and 587, the whole window, in the next.
+		# THE BUTTONS GET THEIR OWN PAIR. Sharing the caption's meant pinning
+		# their width pinned the caption's too, and the paragraph came out a
+		# 200 point column.
+		pane.spacer4 = vanilla.Group('auto')
+		pane.spacer5 = vanilla.Group('auto')
+		# EVERY WIDTH IS STATED, because between two spacers that are only said
+		# to equal each other nothing here has a width auto layout has to
+		# respect - it has a free choice, and takes it differently from run to
+		# run: these rules put the button at 214 points in one process and at
+		# 587, the whole window, in the next. CAPTION_WIDTH clears the longest
+		# line in the paragraph, which is what stops it wrapping.
 		rules = [
-			'H:|[spacer0(==spacer1)]-[caption]-[spacer1]|',
-			'H:|[spacer0]-[exportButton(200)]-[spacer1]|',
-			'H:|[spacer0]-[getHTMLButton(200)]-[spacer1]|',
+			'H:|[spacer0(==spacer1)]-[caption(%d)]-[spacer1]|' % self.CAPTION_WIDTH,
+			'H:|[spacer4(==spacer5)]-[exportButton(200)]-[spacer5]|',
+			'H:|[spacer4]-[getHTMLButton(200)]-[spacer5]|',
 			'V:|[spacer2(==spacer3)]-[caption]-(20)-[exportButton]-[getHTMLButton]-[spacer3]|',
 		]
 		pane.addAutoPosSizeRules(rules, None)
+		self.pinExportRibbon(pane)
+
+	# THE CORNER IT SITS IN, in points from the pane's top right.
+	RIBBON_INSET = 0.0
+	exportRibbon = None
+
+	@objc.python_method
+	def pinExportRibbon(self, pane):
+		"""Sit a BETA ribbon in the export pane's top right corner.
+
+		OUTSIDE THE RULES, like the list's add and delete buttons: the visual
+		format language can put a view after another one, not over the corner
+		of the pane itself. Added last, so it is the last subview and draws on
+		top of everything the rules placed.
+		"""
+		try:
+			size = PKRibbon.RIBBON_SIZE
+			ribbon = PKRibbon.PKRibbonView.alloc().initWithFrame_(
+				NSMakeRect(0, 0, size, size))
+			ribbon.setWord('BETA')
+			self.exportRibbon = ribbon
+			view = pane.getNSView()
+			view.addSubview_(ribbon)
+			ribbon.setTranslatesAutoresizingMaskIntoConstraints_(False)
+			NSLayoutConstraint.activateConstraints_([
+				ribbon.widthAnchor().constraintEqualToConstant_(size),
+				ribbon.heightAnchor().constraintEqualToConstant_(size),
+				ribbon.topAnchor().constraintEqualToAnchor_constant_(
+					view.topAnchor(), self.RIBBON_INSET),
+				ribbon.trailingAnchor().constraintEqualToAnchor_constant_(
+					view.trailingAnchor(), -self.RIBBON_INSET),
+			])
+		except Exception:
+			log(f'pinExportRibbon error: {traceback.format_exc()}', error=True)
 
 	def showWindow_(self, sender):
 		try:
