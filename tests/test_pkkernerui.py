@@ -498,3 +498,75 @@ def test_the_all_masters_entries_are_still_option_alternates(menu):
 	alternates = [str(i.title()) for i in items if i.isAlternate()]
 	assert len(alternates) == 2, alternates
 	assert all('all Masters' in t for t in alternates)
+
+
+# --- the settings laid out for this window ---------------------------------
+
+
+def _controlFrames(pane):
+	"""Every placed control on a pane. -> [(name, NSRect)]"""
+	out = []
+	for name in dir(pane):
+		if name.startswith('_'):
+			continue
+		holder = getattr(pane, name, None)
+		view = getattr(holder, '_nsObject', None)
+		if view is not None and hasattr(view, 'frame'):
+			out.append((name, view.frame()))
+	return out
+
+
+def test_the_preview_fills_its_box(withTool):
+	"""It was built at a flat 670 - the old window less its margins - and an
+	autoresizing mask only acts on LATER resizes, so it drew 670 points of
+	preview in an 816 point box and left the rest empty."""
+	plugin, tool = withTool
+	box = plugin.w.settingsPane.previewBox.getNSView().frame()
+	view = tool.previewView.frame()
+	assert view.size.width == pytest.approx(box.size.width, abs=1)
+	assert view.size.height == pytest.approx(box.size.height, abs=1)
+
+
+def test_the_preview_got_the_room_the_taller_window_gave(withTool):
+	plugin, tool = withTool
+	assert tool.PREVIEW_HEIGHT > 190, "still sized for the 398 point window"
+
+
+def test_nothing_hangs_off_the_bottom_of_the_pane(withTool):
+	"""The pane is not flipped, so a low y is near the bottom."""
+	plugin, _ = withTool
+	for name, frame in _controlFrames(plugin.w.settingsPane):
+		assert frame.origin.y >= 0, f"{name} hangs off the bottom"
+
+
+def test_nothing_runs_off_the_top(withTool):
+	plugin, _ = withTool
+	high = plugin.w.settingsPane.getNSView().frame().size.height
+	for name, frame in _controlFrames(plugin.w.settingsPane):
+		assert frame.origin.y + frame.size.height <= high + 1, f"{name} runs off"
+
+
+def test_the_settings_use_the_height_they_have(withTool):
+	"""They filled 398 points of a 500 point pane and left a hole. Whatever
+	sits lowest should be near the bottom, not a hundred points above it."""
+	plugin, _ = withTool
+	frames = _controlFrames(plugin.w.settingsPane)
+	lowest = min(f.origin.y for _, f in frames)
+	assert lowest <= 40, f"{lowest} points of nothing under the last control"
+	assert lowest >= 10, f"only {lowest} points of margin"
+
+
+def test_the_title_is_not_the_old_name(withTool):
+	plugin, _ = withTool
+	assert plugin.w.settingsPane.shapeTitle.get() == 'PolyKern Settings'
+
+
+def test_the_two_ways_in_place_things_identically(withTool):
+	"""The pane and the standalone fallback both go through buildSettings, so
+	the numbers cannot drift apart."""
+	source = (RESOURCES / 'PKTool.py').read_text()
+	assert source.count('def buildSettings') == 1
+	assert 'self.buildSettings(w)' in source
+	kerner_source = (RESOURCES / 'PKKerner.py').read_text()
+	assert 'tool.buildSettings(pane)' in kerner_source
+	assert 'buildShapeSection' not in kerner_source, 'the kerner still places controls'

@@ -2434,19 +2434,14 @@ class PolyKernTool(SelectTool):
 		try:
 			# FLOATING: THE POINT OF THIS WINDOW IS TO TURN A KNOB AND LOOK AT THE
 			# CANVAS, WHICH IS NOT SOMETHING A WINDOW THAT HIDES BEHIND IT CAN DO.
-			self.setW = vanilla.FloatingWindow((700, 398), 'PolyKern Settings')
+			self.setW = vanilla.FloatingWindow(self.SETTINGS_SIZE, 'PolyKern Settings')
 			w = self.setW
 			# LANDSCAPE, IN TWO COLUMNS, with a rule down the middle: the wall
 			# settings above it, and below, what the kerner does with the walls
 			# once drawn.
-			left, right, midline = 15, 365, 350
 			# SLIDERS, NOT FIELDS: every one of these is a taste with a range,
 			# and a number typed outside it was never going to draw anything.
-			values = self.settingValues()
-
-			self.buildPreviewSection(w)
-			self.buildShapeSection(w, left, right, values)
-			self.buildKernerSection(w, left, right, midline, values)
+			self.buildSettings(w)
 
 			w.bind('close', self.closeSettingsWindow)
 			# ONE PATH INTO THE CONTROLS, opening included: the popup has to say
@@ -2485,6 +2480,35 @@ class PolyKernTool(SelectTool):
 			vanilla.TextBox((x + readout, top + 2, readWidth, 16), '',
 				sizeStyle='small'))
 
+	# THE SETTINGS LAYOUT, IN NUMBERS RATHER THAN SPRINKLED THROUGH THREE
+	# BUILDERS. It was drawn for a 700x398 window of its own; it lives in a
+	# pane of the 840x500 one now, and everything below the preview is placed
+	# against `settingsBelow` so that giving the preview the extra height moves
+	# the rest down with it instead of leaving a hole.
+	SETTINGS_SIZE = (840, 500)
+	PREVIEW_TOP = 36
+	PREVIEW_HEIGHT = 272  # was 190, when there were only 398 points to spend
+	SETTINGS_LEFT, SETTINGS_RIGHT, SETTINGS_MIDLINE = 15, 400, 385
+
+	@objc.python_method
+	def settingsBelow(self):
+		"""The y everything under the preview is measured from. -> int"""
+		return self.PREVIEW_TOP + self.PREVIEW_HEIGHT + 10
+
+	@objc.python_method
+	def buildSettings(self, w):
+		"""Every section of the settings, into `w`.
+
+		ONE WAY IN, so the pane in the kerner's window and the standalone
+		window it falls back to cannot drift apart - and so the numbers that
+		place all this stay with the thing being placed.
+		"""
+		values = self.settingValues()
+		self.buildPreviewSection(w)
+		self.buildShapeSection(w, self.SETTINGS_LEFT, self.SETTINGS_RIGHT, values)
+		self.buildKernerSection(w, self.SETTINGS_LEFT, self.SETTINGS_RIGHT,
+			self.SETTINGS_MIDLINE, values)
+
 	@objc.python_method
 	def buildPreviewSection(self, w):
 		"""The line of text at the top, and everything that acts on it."""
@@ -2498,10 +2522,14 @@ class PolyKernTool(SelectTool):
 		# EVERYTHING ABOUT THE PREVIEW, ON THE PREVIEW: one drawing, with a
 		# size slider along the top rail and the mode button beside it, and
 		# the drawing keeping clear of both.
-		w.previewBox = vanilla.Group((15, 36, -15, 190))
+		w.previewBox = vanilla.Group((15, self.PREVIEW_TOP, -15, self.PREVIEW_HEIGHT))
 		box = w.previewBox
+		# THE BOX'S OWN WIDTH, NOT A NUMBER. This was 670 - the old 700 point
+		# window less its margins - and an autoresizing mask only acts on
+		# LATER resizes, so in the wider window it simply drew 670 points of
+		# preview and left the rest of the box empty.
 		self.previewView = preview.PolyKernPreviewView.alloc().initWithFrame_(
-			NSMakeRect(0, 0, 670, 190))
+			box.getNSView().bounds())
 		self.previewView.setAutoresizingMask_(18)  # width and height sizable
 		box.getNSView().addSubview_(self.previewView)
 		box.sizeSlider = vanilla.Slider((-128, 6, 80, 16),
@@ -2524,14 +2552,15 @@ class PolyKernTool(SelectTool):
 	@objc.python_method
 	def buildShapeSection(self, w, left, right, values):
 		"""What a bubble is shaped like: the three sliders and the grid."""
-		w.line0 = vanilla.HorizontalLine((15, 236, -15, 1))
-		w.shapeTitle = vanilla.TextBox((15, 246, 170, 16), 'KernBubbles Settings')
+		below = self.settingsBelow()
+		w.line0 = vanilla.HorizontalLine((15, below, -15, 1))
+		w.shapeTitle = vanilla.TextBox((15, below + 10, 170, 16), 'PolyKern Settings')
 		# UNDER A GEAR, the way a macOS options menu is spelled. Everything
 		# here is font-wide and done once a session - grouping the font,
 		# fitting the settings to the kerning already in it, and putting
 		# those settings on the clipboard - and three buttons across the
 		# window said so at the width of three sentences.
-		w.copyButton = vanilla.Button((-43, 244, 28, 20), '',
+		w.copyButton = vanilla.Button((-43, below + 8, 28, 20), '',
 			callback=self.actionMenu, sizeStyle='small')
 		gear = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
 			GEAR_SYMBOL, 'Options')
@@ -2548,16 +2577,16 @@ class PolyKernTool(SelectTool):
 		# Each slider is the full width, which is the resolution the hand
 		# gets.
 		for index, (key, label, span, form) in enumerate(auto.SETTING_UI[:3]):
-			self.settingRow(w, left, 272 + index * 24, key, label, span,
+			self.settingRow(w, left, below + 36 + index * 24, key, label, span,
 					values[key])
 		# THE GRID BESIDE THEM, in the room the stack gives back. It is the
 		# same kind of thing - where a bubble node may land - so it keeps
 		# the company it had.
-		w.on = vanilla.CheckBox((right, 272, 190, 18), 'Snap bubble nodes to a grid',
+		w.on = vanilla.CheckBox((right, below + 36, 190, 18), 'Snap bubble nodes to a grid',
 			value=values['grid'] > 0, callback=self.applySettings,
 			sizeStyle='small')
-		w.yLabel = vanilla.TextBox((right + 197, 273, 12, 16), 'Y', sizeStyle='small')
-		w.gridY = NudgeEditText((right + 211, 271, 50, 19), str(int(values['gridY'])),
+		w.yLabel = vanilla.TextBox((right + 197, below + 37, 12, 16), 'Y', sizeStyle='small')
+		w.gridY = NudgeEditText((right + 211, below + 35, 50, 19), str(int(values['gridY'])),
 			callback=self.applySettings, sizeStyle='small')
 
 	@objc.python_method
@@ -2567,19 +2596,20 @@ class PolyKernTool(SelectTool):
 		# wall: the bubbles stay where the sliders above put them, and this
 		# decides how much air is left between two of them, once, for every
 		# pair in the font.
-		w.line = vanilla.HorizontalLine((15, 352, -15, 1))
+		below = self.settingsBelow()
+		w.line = vanilla.HorizontalLine((15, below + 116, -15, 1))
 		fitKey, fitTitle, fitSpan, fitForm = auto.SETTING_UI[3]
 		# A TICK EVERY HALF A PER CENT of the em across the range, and the
 		# slider stops on them: unlike the three above, this is a number nobody
 		# wants to land between - it is the air left between every pair in the
 		# font, and a half is already finer than that reads.
-		self.settingRow(w, left, 364, fitKey, fitTitle, fitSpan, values['fit'],
+		self.settingRow(w, left, below + 128, fitKey, fitTitle, fitSpan, values['fit'],
 			ticks=int(round((fitSpan[1] - fitSpan[0]) / 0.5)) + 1, stop=True)
 		# WHETHER THE KERNER WRITES GROUPS IS ASKED IN THE KERNER, beside
 		# the other thing that decides what a run puts in the font. This
 		# window is what a bubble is; that one is what to do with them.
-		w.kernLine = vanilla.VerticalLine((midline, 360, 1, 28))
-		w.followSpacingBox = vanilla.CheckBox((right, 366, 320, 18), 'Bubbles follow sidebearing changes',
+		w.kernLine = vanilla.VerticalLine((midline, below + 124, 1, 28))
+		w.followSpacingBox = vanilla.CheckBox((right, below + 130, 320, 18), 'Bubbles follow sidebearing changes',
 			value=bool(auto._pref(auto.PREF_FOLLOW_SPACING, True)), callback=self.applySettings,
 			sizeStyle='small')
 

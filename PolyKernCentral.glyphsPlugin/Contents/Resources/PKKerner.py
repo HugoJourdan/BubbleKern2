@@ -457,10 +457,10 @@ class PolyKernKerner(GeneralPlugin):
 					'reopen this window.')
 				return False
 			tool.setW = pane
-			values = tool.settingValues()
-			tool.buildPreviewSection(pane)
-			tool.buildShapeSection(pane, 15, 365, values)
-			tool.buildKernerSection(pane, 15, 365, 350, values)
+			# THE TOOL PLACES ITS OWN CONTROLS. This used to pass three
+			# magic numbers across the bundle, which then had to be kept in
+			# step with the standalone window's copy of them.
+			tool.buildSettings(pane)
 			tool.loadSettings()  # ONE PATH INTO THE CONTROLS, opening included
 			Glyphs.addCallback(tool.settingsInterfaceUpdate, UPDATEINTERFACE)
 			self.settingsTool = tool
