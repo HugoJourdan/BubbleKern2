@@ -22,7 +22,11 @@ from AppKit import (
 	NSWorkspace,  # for revealing exported fonts in Finder
 	NSURL,  # for revealing exported fonts in Finder
 	NSLayoutConstraint,  # to sit the add and delete buttons on the list
+	NSAttributedString,  # to measure a paragraph before giving it a box
+	NSFontAttributeName,
+	NSStringDrawingUsesLineFragmentOrigin,
 )
+from Foundation import NSMakeSize
 
 import PKAutoBubble
 import PKCommonLogic
@@ -826,15 +830,41 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				for index, pair in enumerate(PKAutoBubble.relevant_pairs(), 1)]
 		return self._relevantRows
 
+	POPOVER_SIZE = (380.0, 460.0)
+	POPOVER_MARGIN = 16.0
+
+	@objc.python_method
+	def paragraphHeight(self, text, width):
+		"""How tall `text` needs to be at `width`. -> float
+
+		MEASURED, NOT GUESSED. The first cut of the popover gave the paragraph
+		a round 106 points; it wanted 126 and the last two lines were simply
+		cut off, with nothing to say so.
+		"""
+		try:
+			font = NSFont.systemFontOfSize_(NSFont.smallSystemFontSize())
+			written = NSAttributedString.alloc().initWithString_attributes_(
+				text, {NSFontAttributeName: font})
+			box = written.boundingRectWithSize_options_(
+				NSMakeSize(width, 10000.0), NSStringDrawingUsesLineFragmentOrigin)
+			return float(int(box.size.height)) + 4.0  # rounding, and a hair
+		except Exception:
+			log(f'paragraphHeight error: {traceback.format_exc()}', error=True)
+			return 160.0  # too much room reads better than a cut sentence
+
 	@objc.python_method
 	def showRelevantPairs(self, sender):
 		"""A popover explaining the list, with the list in it."""
 		try:
 			rows = self.relevantRows()
-			popover = vanilla.Popover((380, 460))
-			popover.blurb = vanilla.TextBox((16, 14, -16, 106),
-				self.RELEVANT_BLURB.format(count=len(rows)), sizeStyle='small')
-			popover.pairs = vanilla.List2((16, 128, -16, -16), rows,
+			wide, high = self.POPOVER_SIZE
+			margin = self.POPOVER_MARGIN
+			blurb = self.RELEVANT_BLURB.format(count=len(rows))
+			said = self.paragraphHeight(blurb, wide - margin * 2)
+			popover = vanilla.Popover((wide, high))
+			popover.blurb = vanilla.TextBox((margin, 14, -margin, said),
+				blurb, sizeStyle='small')
+			popover.pairs = vanilla.List2((margin, 14 + said + 12, -margin, -margin), rows,
 				columnDescriptions=[
 					{"title": "#", "identifier": "#", "width": 50},
 					{"title": "Left", "identifier": "Left", "width": 60},

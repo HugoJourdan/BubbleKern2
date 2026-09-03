@@ -243,3 +243,41 @@ def test_the_corner_buttons_keep_clear_of_the_corner(window):
 	assert right == pytest.approx(kerner.PolyKernKerner.LIST_BUTTON_INSET)
 	assert below == pytest.approx(kerner.PolyKernKerner.LIST_BUTTON_INSET)
 	assert kerner.PolyKernKerner.LIST_BUTTON_INSET >= 12
+
+
+def test_the_blurb_gets_the_room_its_words_need(window):
+	"""It was given a round 106 points, wanted 126, and lost two lines."""
+	plugin, _ = window
+	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	popover = plugin.relevantPopover
+	text = plugin.RELEVANT_BLURB.format(count=len(plugin.relevantRows()))
+	wide = plugin.POPOVER_SIZE[0] - plugin.POPOVER_MARGIN * 2
+	needed = plugin.paragraphHeight(text, wide)
+	box = popover.blurb.getNSTextField().frame()
+	assert box.size.height >= needed, f"{box.size.height} for {needed}"
+	popover.close()
+
+
+def test_a_longer_paragraph_would_get_a_taller_box(window):
+	"""The height is measured, so it follows the words rather than a number
+	somebody typed once."""
+	plugin, _ = window
+	wide = plugin.POPOVER_SIZE[0] - plugin.POPOVER_MARGIN * 2
+	short = plugin.paragraphHeight("One line.", wide)
+	long = plugin.paragraphHeight("One line. " * 200, wide)
+	assert long > short * 4, f"{short} then {long}"
+
+
+def test_the_pairs_still_fit_under_it(window):
+	plugin, _ = window
+	plugin.showRelevantPairs(plugin.w.tabs[0].group1.infoButton)
+	popover = plugin.relevantPopover
+	content = popover.getNSPopover().contentViewController().view().frame()
+	list_frame = popover.pairs.getNSScrollView().frame()
+	blurb = popover.blurb.getNSTextField().frame()
+	assert list_frame.size.height > 100, "no room left for the pairs"
+	assert (list_frame.origin.y + list_frame.size.height
+			<= content.size.height + 1), "the list runs off the popover"
+	# the two do not overlap: the list starts below the paragraph
+	assert blurb.size.height + 14 <= content.size.height - list_frame.size.height
+	popover.close()
