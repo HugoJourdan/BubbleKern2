@@ -430,12 +430,16 @@ def test_ink_that_fills_the_page_is_the_page(sizer):
 	assert (found.size.width, found.size.height) == pytest.approx((16, 24), abs=0.5)
 
 
-def test_the_shipped_artwork_has_margins_to_lose(sizer):
-	"""If this ever fails the artwork was trimmed - which is fine, but then the
-	sizing below is no longer being exercised on anything."""
+def test_the_shipped_artwork_is_readable_and_has_ink_in_it(sizer):
+	"""Whatever it happens to be. It has been trimmed, padded and redrawn
+	across a morning; what the sizing needs is that it can be found at all.
+	Padded artwork is exercised by the painted images below, which is where it
+	belongs - a test that leans on the shipped file having margins fails the
+	day somebody trims it, and trimming it is allowed."""
 	artwork = NSImage.alloc().initByReferencingFile_(str(ARTWORK))
-	page, ink = artwork.size(), sizer.inkBounds(artwork)
-	assert ink.size.height < page.height, 'artwork already trimmed vertically'
+	assert artwork is not None and artwork.isValid(), 'the icon file is gone'
+	ink = sizer.inkBounds(artwork)
+	assert ink is not None and ink.size.height > 0, 'the artwork is blank'
 
 
 def test_the_mark_is_the_asked_for_height(sizer):
