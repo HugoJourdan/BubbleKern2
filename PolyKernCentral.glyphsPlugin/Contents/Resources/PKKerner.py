@@ -501,7 +501,15 @@ class PolyKernKerner(GeneralPlugin):
 		"""
 		try:
 			pane = self.w.groupsPane
-			pane.caption = vanilla.TextBox((15, 12, -15, 32), '', sizeStyle='small')
+			# THE COMMAND THAT MAKES THE GROUPS, WITH THE GROUPS. It was an
+			# item in the settings pane's action menu, two panes away from the
+			# grid that shows what it did.
+			pane.autoButton = vanilla.Button(
+				(-self.AUTO_BUTTON_W - 15, 10, self.AUTO_BUTTON_W, 20),
+				'Set Refer Glyphs Automatically…', sizeStyle='small',
+				callback=self.setReferGlyphs)
+			pane.caption = vanilla.TextBox(
+				(15, 12, -self.AUTO_BUTTON_W - 30, 32), '', sizeStyle='small')
 			# THE WIDTH IS A PLACEHOLDER. The scroll view sets its document
 			# view's width, and the grid lays itself out again when it does.
 			grid = PKGroupGridView.alloc().initWithFrame_(NSMakeRect(0, 0, 800, 1))
@@ -511,6 +519,32 @@ class PolyKernKerner(GeneralPlugin):
 				hasHorizontalScroller=False)
 		except Exception:
 			log(f'buildGroupsPane error: {traceback.format_exc()}', error=True)
+
+	# WIDE ENOUGH FOR ITS OWN TITLE. A vanilla Button truncates rather than
+	# growing, and a truncated command is one nobody presses.
+	AUTO_BUTTON_W = 215
+
+	@objc.python_method
+	def setReferGlyphs(self, sender=None):
+		"""Hand the run to the tool, which owns it and the sheet it asks with.
+
+		THE TOOL, NOT THIS PLUGIN. Measuring a wall is the tool's work and the
+		settings that decide the shape are the tool's too; all this does is
+		ask, from the pane where the answer will show up.
+		"""
+		try:
+			import PKTool
+			tool = PKTool.mainDrawingHandler
+			if tool is None:
+				# THE TOOL IS A SEPARATE PRINCIPAL CLASS of this bundle and may
+				# not have been made yet.
+				PKCommonLogic.show_alert('Set Refer Glyphs Automatically',
+					'The PolyKern tool has not loaded yet. Pick it in the '
+					'toolbar once, then try again.', cancel=False)
+				return
+			tool.openAutoGroupWindow()
+		except Exception:
+			log(f'setReferGlyphs error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def groupsCaption(self, groups) -> str:

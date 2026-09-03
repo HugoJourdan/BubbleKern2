@@ -794,3 +794,72 @@ def test_the_caption_and_the_buttons_are_spaced_apart(window):
 		middle = frame.origin.x + frame.size.width / 2.0
 		assert middle == pytest.approx(pane.size.width / 2.0, abs=1.0), \
 				f'{name} centred at {middle:.0f} of {pane.size.width:.0f}'
+
+
+# --- Set Refer Glyphs Automatically, moved -----------------------------------
+# It made the groups from an item in the settings pane's action menu, two panes
+# away from the grid that shows what it did.
+
+
+def test_the_groups_pane_offers_the_command(window):
+	plugin, _ = window
+	button = plugin.w.groupsPane.autoButton
+	assert button.getTitle() == 'Set Refer Glyphs Automatically…'
+
+
+def test_the_button_is_wide_enough_for_its_own_title(window):
+	"""A vanilla Button truncates rather than growing, and a truncated
+	command is one nobody presses."""
+	plugin, _ = window
+	native = plugin.w.groupsPane.autoButton.getNSButton()
+	natural = native.cell().cellSize().width
+	assert plugin.AUTO_BUTTON_W >= natural, f'{natural:.0f} into {plugin.AUTO_BUTTON_W}'
+
+
+def test_the_caption_does_not_run_under_the_button(window):
+	plugin, _ = window
+	plugin.showPane(plugin.GROUPS)
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	caption = plugin.w.groupsPane.caption._nsObject.frame()
+	button = plugin.w.groupsPane.autoButton.getNSButton().frame()
+	assert caption.origin.x + caption.size.width <= button.origin.x + 1
+
+
+def test_the_settings_menu_has_let_it_go(withTool):
+	plugin, tool = withTool
+	titles = [title for title, _ in tool.actionMenuItems()]
+	assert 'Set Refer Glyphs automatically…' not in titles, titles
+	assert 'Set Bubble Settings based on Kerning…' in titles, 'took the wrong one'
+
+
+def test_without_a_tool_the_button_says_so_rather_than_doing_nothing(window,
+		monkeypatch):
+	plugin, _ = window
+	said = []
+	monkeypatch.setattr(kerner.PKCommonLogic, 'show_alert',
+			lambda *a, **k: said.append(a), raising=False)
+	plugin.setReferGlyphs()
+	assert said, 'silently did nothing'
+
+
+# --- The sheets those commands put up ----------------------------------------
+# `setW` was a window and is a pane now. vanilla.Sheet reaches into its parent
+# for `_window`, a Group has none, and every caller catches the AttributeError
+# and logs it - so all three sheets stopped appearing and nothing said why.
+
+
+def test_a_sheet_can_be_put_up_on_the_pane(withTool):
+	import vanilla
+	plugin, tool = withTool
+	parent = tool.sheetParent()
+	assert parent is not None, 'nothing to hang a sheet on'
+	assert parent is plugin.w.getNSWindow()
+	sheet = vanilla.Sheet((240, 130), parent)  # this is what used to raise
+	assert sheet is not None
+
+
+def test_the_pane_itself_is_not_offered_as_a_parent(withTool):
+	"""It is what `setW` holds, and it is exactly what does not work."""
+	plugin, tool = withTool
+	assert tool.setW is plugin.w.settingsPane
+	assert tool.sheetParent() is not tool.setW

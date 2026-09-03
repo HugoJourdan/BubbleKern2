@@ -2188,6 +2188,27 @@ class PolyKernTool(SelectTool):
 	# LETS THE NEXT ACTIVATION TAKE THEM BACK OUT AGAIN.
 
 	@objc.python_method
+	def sheetParent(self):
+		"""The window a sheet can be put up on. -> NSWindow | None
+
+		`setW` WAS A WINDOW AND IS A PANE NOW. vanilla.Sheet takes a vanilla
+		Window or a real NSWindow and reaches straight into it; a Group is
+		neither, and what a Group gives it is an AttributeError - which every
+		caller here catches and logs, so the sheet simply never appeared and
+		nothing said why. An NSWindow is what both kinds of parent can hand
+		over, so that is what this returns.
+		"""
+		parent = getattr(self, 'setW', None)
+		if parent is None:
+			return None
+		if hasattr(parent, 'getNSWindow'):  # the standalone settings window
+			return parent.getNSWindow()
+		if hasattr(parent, 'getNSView'):  # a pane of somebody else's window
+			view = parent.getNSView()
+			return view.window() if view is not None else None
+		return None
+
+	@objc.python_method
 	def openAutoGroupWindow(self):
 		try:
 			font = Glyphs.font
@@ -2197,7 +2218,7 @@ class PolyKernTool(SelectTool):
 			# the panel's own action menu, it asks two questions and then goes
 			# away, and a free-floating window for that is one more thing to find
 			# again behind the one it came from.
-			parent = getattr(self, 'setW', None)
+			parent = self.sheetParent()
 			if parent is None:
 				return
 			# TWO QUESTIONS WIDE: everything else is set in the window this sheet
@@ -2274,8 +2295,23 @@ class PolyKernTool(SelectTool):
 				NSOperationQueue.mainQueue().addOperationWithBlock_(
 					lambda: self.openAutoGroupResults(groups, summary))
 			self.refreshAfterWrite()
+			self.refreshGroupsPane()
 		except Exception:
 			log(f'applyAutoGroup error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def refreshGroupsPane(self):
+		"""Tell the Groups pane the references changed, if there is one up.
+
+		It reads them when it is shown, and the pane somebody starts a run from
+		is the one they are already looking at.
+		"""
+		try:
+			import PKKerner
+			if PKKerner.mainKerner is not None:
+				PKKerner.mainKerner.refreshGroups()
+		except Exception:
+			log(f'refreshGroupsPane error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def openAutoGroupResults(self, groups, summary):
@@ -2287,7 +2323,7 @@ class PolyKernTool(SelectTool):
 		for and why this borrows its shape.
 		"""
 		try:
-			parent = getattr(self, 'setW', None)
+			parent = self.sheetParent()
 			font = Glyphs.font
 			if parent is None or font is None or not groups:
 				return
@@ -2701,12 +2737,28 @@ class PolyKernTool(SelectTool):
 			log(f'settingsInterfaceUpdate error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
+	def actionMenuItems(self):
+		"""What the ellipsis button offers, in order. -> ((title, action), ...)
+
+		A None title is a separator. Its own method so it can be read back:
+		popped up, the menu is gone before anything can look at it.
+
+		NO "SET REFER GLYPHS AUTOMATICALLY" HERE ANY MORE. It makes the groups,
+		so it sits in the Groups pane with them, beside the thing it changes.
+		"""
+		return (
+			('Set Bubble Settings based on Kerning…', 'fitFromKerning:'),
+			(None, None),
+			('Copy Filter Parameter', 'copyFilterParameter:'),
+		)
+
+	@objc.python_method
 	def actionMenu(self, sender=None):
 		"""Drop the ellipsis button's menu under it.
 
-		Everything font-wide lives here: the two commands that change the whole
-		master and the one that hands the settings to another file. Each is done
-		once a session.
+		What is left here is font-wide and done once a session: the command that
+		fits the settings to kerning already done by hand, and the one that
+		hands the settings to another file.
 		"""
 		try:
 			button = self.setW.copyButton.getNSButton()
@@ -2714,11 +2766,7 @@ class PolyKernTool(SelectTool):
 			# A REAL SELECTOR, not a Python callable: an NSMenuItem sends its
 			# action through the responder chain, and a bound method is not
 			# something the chain can send.
-			for title, action in (
-					('Set Refer Glyphs automatically…', 'autoGroupFont:'),
-					('Set Bubble Settings based on Kerning…', 'fitFromKerning:'),
-					(None, None),
-					('Copy Filter Parameter', 'copyFilterParameter:')):
+			for title, action in self.actionMenuItems():
 				if title is None:
 					menu.addItem_(NSMenuItem.separatorItem())
 					continue
@@ -2750,7 +2798,7 @@ class PolyKernTool(SelectTool):
 		given are whatever this string spells.
 		"""
 		try:
-			parent = getattr(self, 'setW', None)
+			parent = self.sheetParent()
 			if parent is None:
 				return
 			self.fitW = vanilla.Sheet((380, 132), parent)
