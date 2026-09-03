@@ -62,6 +62,11 @@ KERN_LABEL_ROOM = 26.0
 # measured up from the descender: 700 of cap height on 750/-250 metrics puts
 # it at (250 + 350) / 1000. Stands in when a master says no cap height.
 CAP_BAND_EM = 0.6
+# AND THE OPTICAL CENTRE IS ABOVE THE GEOMETRIC ONE. Anything set exactly in
+# the middle of a box reads a shade low: the eye puts the middle of a rectangle
+# a little higher than the ruler does. As a fraction of the box's own height,
+# so it holds however tall the preview is dragged.
+OPTICAL_LIFT = 0.04
 
 
 def previewEmBottom(usableHeight, lineHeight, capBand=None):
@@ -78,13 +83,16 @@ def previewEmBottom(usableHeight, lineHeight, capBand=None):
 	higher still. Both were tried; this is the third answer and the one that
 	says what it is doing.
 
+	AND A SHADE ABOVE THE MIDDLE, by OPTICAL_LIFT: dead centre reads low.
+
 	`capBand` is how far the middle of that band stands above the bottom of the
 	em box, in the same points as `lineHeight`. Given none, CAP_BAND_EM of the
 	line stands in.
 	"""
 	if capBand is None:
 		capBand = lineHeight * CAP_BAND_EM
-	emBottom = PREVIEW_FOOT_ROOM + usableHeight / 2.0 - capBand
+	middle = PREVIEW_FOOT_ROOM + usableHeight * (0.5 + OPTICAL_LIFT)
+	emBottom = middle - capBand
 	# THE FIGURES HANG THIS FAR UNDER THE LINE and the foot of the box is as
 	# far as they go; the em box may not run off the top either. A line too
 	# tall to satisfy both keeps its figures, and the clip takes the rest.

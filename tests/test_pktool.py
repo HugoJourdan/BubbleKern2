@@ -363,8 +363,10 @@ def test_the_band_the_eye_reads_is_what_gets_centred():
 		lineHeight = (usableHeight - preview_module.KERN_LABEL_ROOM) * 0.55
 		capBand = lineHeight * preview_module.CAP_BAND_EM
 		emBottom = preview_module.previewEmBottom(usableHeight, lineHeight, capBand)
-		middle = foot + usableHeight / 2.0
+		# A SHADE ABOVE THE MIDDLE: dead centre reads low.
+		middle = foot + usableHeight * (0.5 + preview_module.OPTICAL_LIFT)
 		assert emBottom + capBand == pytest.approx(middle), usableHeight
+		assert middle > foot + usableHeight / 2.0, 'the lift went the wrong way'
 		# WHICH IS LOWER THAN CENTRING THE EM BOX, by the difference between
 		# the two middles - a tenth of the em, on ordinary metrics.
 		assert emBottom < foot + (usableHeight - lineHeight) / 2.0
@@ -648,3 +650,69 @@ def test_a_layer_with_no_bubbles_is_left_alone(tool):
 	layer.tempData[BUBBLES] = None
 	layer.selection = [object()]
 	assert tool.deleteSelectedNodes(layer) is False
+
+
+def test_the_lift_is_small_enough_to_still_be_a_lift():
+	"""It corrects an optical centre, not a layout. Past a few per cent the
+	line is not centred any more, it is high."""
+	assert 0 < preview_module.OPTICAL_LIFT <= 0.08
+
+
+def test_the_figures_still_clear_the_foot_once_it_is_lifted():
+	"""The lift moves the line up, which is the safe direction - but the
+	clamp is what says so, not the arithmetic."""
+	foot = preview_module.PREVIEW_FOOT_ROOM
+	for usableHeight in (120.0, 190.0, 238.0, 400.0):
+		tallest = usableHeight - preview_module.KERN_LABEL_ROOM
+		for lineHeight in (tallest, tallest * 0.6):
+			emBottom = preview_module.previewEmBottom(usableHeight, lineHeight)
+			assert preview_module.kernLabelY(emBottom) >= foot, usableHeight
+
+
+# --- The canvas's own right-click menu ---------------------------------------
+# Glyphs offers it to this tool whether or not the tool is the current one, so
+# the PolyKern commands were turning up under a right-click in the middle of
+# somebody using the Select tool.
+
+
+def _menuTitles(tool):
+	from AppKit import NSMenu, NSMenuItem
+	menu = NSMenu.alloc().init()
+	menu.addItem_(NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+		'Something Glyphs Put There', None, ''))
+	tool.addMenuItemsForEvent_toMenu_(None, menu)
+	return [str(menu.itemAtIndex_(i).title()) for i in range(menu.numberOfItems())]
+
+
+def test_the_flag_starts_off(tool):
+	"""A class default, so it reads False before activate has ever run - and
+	never as a bound method, which a name AppKit also knows would give back."""
+	assert tool.polyKernActive is False
+
+
+def test_no_polykern_commands_while_another_tool_is_in_hand(tool):
+	titles = _menuTitles(tool)
+	assert titles == ['Something Glyphs Put There'], titles
+
+
+def test_the_commands_are_there_while_it_is(tool, monkeypatch):
+	monkeypatch.setattr(tool, 'polyKernActive', True, raising=False)
+	monkeypatch.setattr(type(tool), 'setActiveLayer', lambda self: False,
+			raising=False)
+	titles = _menuTitles(tool)
+	assert 'PolyKern Parameters…' in titles, titles
+
+
+def test_leaving_the_tool_puts_the_commands_away(tool, monkeypatch):
+	"""`deactivate` is the counterpart, and the declined-font path inside
+	`activate` calls it too."""
+	monkeypatch.setattr(tool, 'polyKernActive', True, raising=False)
+	monkeypatch.setattr(tool_module.Glyphs, 'removeCallback',
+			lambda *a, **k: None, raising=False)
+	monkeypatch.setattr(tool_module.store, 'clearPreviewKerning',
+			lambda *a, **k: None, raising=False)
+	monkeypatch.setattr(type(tool), 'hideInfoBox', lambda self: None,
+			raising=False)
+	tool.deactivate()
+	assert tool.polyKernActive is False
+	assert _menuTitles(tool) == ['Something Glyphs Put There']

@@ -259,6 +259,12 @@ class PolyKernTool(SelectTool):
 	TOOLBAR_ICON_CANVAS = 22.0  # the slot Glyphs lays out for a tool icon
 	# WHERE THE SCAN'S OWN NUMBERS LIVE NOW. Kept here as names so anything
 	# that reads them off this class still can - PKIcon is the one definition.
+	# WHETHER THIS TOOL IS THE ONE SELECTED, kept by `activate`/`deactivate`.
+	# A CLASS DEFAULT, so it reads False before either has ever run - and
+	# never as a bound method, which is what a name AppKit also knows would
+	# give back. See addMenuItemsForEvent_toMenu_.
+	polyKernActive = False
+
 	INK_SEARCH_SCALE = PKIcon.INK_SEARCH_SCALE
 	INK_SEARCH_FLOOR = PKIcon.INK_SEARCH_FLOOR
 
@@ -643,6 +649,10 @@ class PolyKernTool(SelectTool):
 		self.infoBoxRules = None
 
 	def activate(self):  # When the tool is activated, updateUI and set activeLayer
+		# FIRST, AND OUTSIDE THE TRY. Everything below can fail on a font that
+		# declines PolyKern, and which tool is in hand is true either way. The
+		# Cancel path calls deactivate itself, which takes it back off again.
+		self.polyKernActive = True
 		try:
 			proceed = False
 			initialise = False
@@ -695,6 +705,7 @@ class PolyKernTool(SelectTool):
 
 	@objc.python_method
 	def deactivate(self):  # When the tool is deactivated / went to font view
+		self.polyKernActive = False
 		Glyphs.removeCallback(self.updateUI, UPDATEINTERFACE)
 		NSNotificationCenter.defaultCenter().removeObserver_name_object_(
 			self, 'NSUndoManagerDidUndoChangeNotification', None
@@ -1729,7 +1740,15 @@ class PolyKernTool(SelectTool):
 		They left the two side menus when those became per-side commands, and a
 		panel that shapes every wall in the font did not belong under a button
 		that draws one of them.
+
+		ONLY WHILE THIS IS THE TOOL IN HAND. Glyphs offers the canvas's menu to
+		this tool whether or not it is the current one, so without the guard
+		the PolyKern commands turn up under a right-click in the middle of
+		somebody using the Select tool - commands for a canvas they are not
+		looking at, on a layer they have not chosen.
 		"""
+		if not self.polyKernActive:
+			return
 		try:
 			# NEAR THE FOOT, where the tool template puts a tool's own commands:
 			# inserting at the top would push every item Glyphs put there down and
