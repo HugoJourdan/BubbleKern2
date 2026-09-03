@@ -155,7 +155,6 @@ PREF_MAX_INSET = "com.Tosche.PolyKern.auto.maxInset"
 PREF_AMPLITUDE = "com.Tosche.PolyKern.auto.amplitude"
 PREF_PREVIEW_KERN = "com.Tosche.PolyKern.previewKern"
 PREF_FOLLOW_SPACING = "com.Tosche.PolyKern.followSpacing"
-PREF_KERN_GROUPS = "com.Tosche.PolyKern.kernGroups"
 # ADDS THE RELEVANT PAIRS TO THE PRESET'S, it does not narrow to them. The
 # key still says "relevantOnly" so that anyone who had it ticked keeps it
 # ticked; only what the tick does has changed.

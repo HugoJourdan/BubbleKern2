@@ -38,8 +38,8 @@ sys.modules.setdefault('PKTool', types.SimpleNamespace(mainDrawingHandler=None))
 kerner = _load('PKKerner')
 
 
-def row(left, right, flipped=False):
-	return {'Left': left, 'Right': right, 'Add Flipped': flipped,
+def row(left, right, flipped=False, kern=True):
+	return {'Kern': kern, 'Left': left, 'Right': right, 'Add Flipped': flipped,
 			'Pairs': str(len(left.split()) * len(right.split()) * (2 if flipped else 1))}
 
 
@@ -123,3 +123,54 @@ def test_the_list_is_added_before_the_selection_narrows_it():
 	added = source.index('pairsList |= PKAutoBubble.relevant_pair_names')
 	narrowed = source.index('if selectedLayersOnly:')
 	assert added < narrowed, 'the relevant pairs escape the selection'
+
+
+# --- the Kern column ---------------------------------------------------------
+
+import PKCommonLogic  # noqa: E402  (the resources are on sys.path by now)
+
+
+def test_a_row_switched_off_contributes_nothing(plugin):
+	assert plugin().presetPairs([row('A B', 'x y', kern=False)]) == set()
+
+
+def test_the_other_rows_still_count(plugin):
+	rows = [row('A B', 'x y', kern=False), row('T', 'o')]
+	assert plugin().presetPairs(rows) == {('T', 'o')}
+
+
+def test_the_total_leaves_switched_off_rows_out(plugin):
+	rows = [row('A B C', 'x y z', kern=False), row('T', 'o')]
+	assert plugin().totalCount(rows) == 1
+
+
+def test_a_row_with_no_flag_at_all_is_on(plugin):
+	"""Rows made before the column existed, still in memory."""
+	bare = {'Left': 'A', 'Right': 'x', 'Add Flipped': False, 'Pairs': '1'}
+	assert plugin().presetPairs([bare]) == {('A', 'x')}
+
+
+def test_switching_a_row_off_can_only_lower_the_total(plugin):
+	on = [row('A B C', 'x y z', flipped=True)]
+	off = [row('A B C', 'x y z', flipped=True, kern=False)]
+	assert plugin().totalCount(off) < plugin().totalCount(on)
+
+
+# --- what a saved preset means -----------------------------------------------
+
+
+def test_a_three_long_preset_row_is_on():
+	"""Every preset saved before the Kern column existed."""
+	assert PKCommonLogic.rowIsOn(('A B', 'x y', True)) is True
+
+
+def test_a_four_long_row_says_for_itself():
+	assert PKCommonLogic.rowIsOn(('A B', 'x y', True, False)) is False
+	assert PKCommonLogic.rowIsOn(('A B', 'x y', True, True)) is True
+
+
+def test_the_run_skips_switched_off_rows():
+	"""Read off the source: `kernOpenType` wants a live font to run."""
+	source = (RESOURCES / 'PKCommonLogic.py').read_text()
+	loop = source.index('for perm in preset:')
+	assert 'if not rowIsOn(perm):' in source[loop:loop + 200]

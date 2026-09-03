@@ -861,6 +861,19 @@ def roundup(givenNumber):
 	return int(math.ceil(givenNumber / 10.0)) * 10
 
 
+def rowIsOn(perm) -> bool:
+	"""Whether a saved preset row takes part in a run. -> bool
+
+	The fourth field is the Kern column in the kerner's list. It was added
+	after the format was set, so a row saved before it existed is three long -
+	and every row was on back then.
+	"""
+	try:
+		return bool(perm[3]) if len(perm) > 3 else True
+	except Exception:
+		return True
+
+
 def namesByCharacter(font):
 	"""Which glyph draws each character in this font. -> {str: str}
 
@@ -898,6 +911,8 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		preset = presetsDic[presetName] # preset for use
 		pairsList = []
 		for perm in preset: # build pairsList
+			if not rowIsOn(perm):
+				continue
 			glyphsL = perm[0].split()
 			glyphsR = perm[1].split()
 			pairsList.extend([(L, R) for L in glyphsL for R in glyphsR if f.glyphs[L] and f.glyphs[R]])
@@ -928,7 +943,13 @@ def kernOpenType(presetName: str, selectedLayersOnly: bool):
 		# GROUP SHARE ONE WALL, SO EVERY PAIR IN A GROUP HAS ONE ANSWER. WRITING
 		# IT ONCE COLLAPSES THE PAIR COUNT BY ROUGHLY THE SQUARE OF THE AVERAGE
 		# GROUP SIZE AND LEAVES A KERNING TABLE A PERSON CAN OPEN AND READ.
-		useGroups = bool(PKAutoBubble._pref(PKAutoBubble.PREF_KERN_GROUPS, False))
+		# ALWAYS. Kerning the groups the bubbles fall into is the point of
+		# having them: members of a bubble group share a wall, so every pair
+		# inside a group has one answer, and writing it once leaves a kerning
+		# table a person can open and read. It used to be a checkbox; the
+		# `if useGroups` branches below are what is left of that, kept because
+		# the loop they guard is the one that writes the font's kerning.
+		useGroups = True
 		# Read ONCE: the loop below runs over every pair in the preset, and
 		# both of these come from the font's upm and a preference.
 		space = PKAutoBubble.fit_space(f, m)

@@ -21,6 +21,7 @@ from AppKit import (
 	NSFloatingWindowLevel,
 	NSWorkspace,  # for revealing exported fonts in Finder
 	NSURL,  # for revealing exported fonts in Finder
+	NSLayoutConstraint,  # to sit the add and delete buttons on the list
 )
 
 import PKAutoBubble
@@ -353,7 +354,7 @@ class PolyKernKerner(GeneralPlugin):
 		tab0.group0.optionsPopup = vanilla.PopUpButton('auto', popupOptions, callback=self.popupTasks)  # POPUP MENU
 		tab0.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
 
-		emptyPermutation = [{"Left": "A B C", "Right": "X Y Z", "Add Flipped": True, "Pairs": "0"}]  # TITLE
+		emptyPermutation = [{"Kern": True, "Left": "A B C", "Right": "X Y Z", "Add Flipped": True, "Pairs": "0"}]  # TITLE
 
 		dragSettings = dict(
 			makeDragDataCallback=self.makeDragDataCallback
@@ -372,6 +373,14 @@ class PolyKernKerner(GeneralPlugin):
 			'auto',
 			items=emptyPermutation,
 			columnDescriptions=[
+				# WHICH ROWS A RUN USES. Off is not deleted: a row is somebody's
+				# thinking about what needs kerning, and turning it off for one
+				# run should not cost them it.
+				{"title": "Kern",
+					"identifier": "Kern",
+					"cellClass": vanilla.CheckBoxList2Cell,
+					"editable": True,
+					"width": 40},
 				{"title": "Left", "identifier": "Left"},
 				{"title": "Right", "identifier": "Right"},
 				{"title": "Add Flipped",
@@ -394,10 +403,13 @@ class PolyKernKerner(GeneralPlugin):
 		tableView = tab0.group0.permList._tableView
 		tableView.setAllowsColumnReordering_(False)
 		tableView.unbind_("sortDescriptors")  # Disables sorting by clicking the title bar
-		tableView.tableColumns()[0].setResizingMask_(1)
-		tableView.tableColumns()[1].setResizingMask_(1)
-		tableView.tableColumns()[2].setResizingMask_(0)
-		tableView.tableColumns()[3].setResizingMask_(0)
+		# INDEXED, SO THE Kern COLUMN SHIFTED THEM ALL ALONG ONE. Only Left and
+		# Right stretch; the three narrow ones stay the width they were given.
+		tableView.tableColumns()[0].setResizingMask_(0)  # Kern
+		tableView.tableColumns()[1].setResizingMask_(1)  # Left
+		tableView.tableColumns()[2].setResizingMask_(1)  # Right
+		tableView.tableColumns()[3].setResizingMask_(0)  # Add Flipped
+		tableView.tableColumns()[4].setResizingMask_(0)  # Pairs
 		tableView.setColumnAutoresizingStyle_(1)
 		# setResizingMask_() 0=Fixed, 1=Auto-Resizable (Not user-resizable). There may be more options?
 		# setColumnAutoresizingStyle accepts value from 0 to 5.
@@ -414,17 +426,19 @@ class PolyKernKerner(GeneralPlugin):
 		minusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("trash", None)
 		tab0.group0.delButton = vanilla.ImageButton('auto', imageObject=minusImage, callback=self.delButton)
 
+		# THE ADD AND DELETE BUTTONS ARE NOT IN HERE. They are pinned to the
+		# list's own bottom right corner below, which the visual format
+		# language cannot say: it can put a view after another one, not on it.
 		rules = [
 			'H:|-[optionsPopup]',
 			'H:|-[permList(>=600)][preview(200)]-|',
-			'H:|-[addButton(iconButtonW)][delButton(iconButtonW)]-[total][preview]',
-			'V:|[optionsPopup]-[permList(>=100)][addButton(iconButtonH)]|',
-			'V:[permList][delButton(iconButtonH)]',
-			'V:[permList]-(8)-[total(iconButtonH)]',
-			'V:[optionsPopup]-[preview][addButton(iconButtonH)]',
+			'H:|-[total][preview]',
+			'V:|[optionsPopup]-[permList(>=100)]-(8)-[total(iconButtonH)]|',
+			'V:[optionsPopup]-[preview]-(8)-[total]',
 		]
-		metrics = {'iconButtonW': 40, 'iconButtonH': 24}
+		metrics = {'iconButtonH': 24}
 		tab0.group0.addAutoPosSizeRules(rules, metrics)
+		self.pinListButtons(tab0.group0)
 
 		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
 		tab0.group1.progress.show(False)
@@ -440,25 +454,15 @@ class PolyKernKerner(GeneralPlugin):
 			'Also kern the pairs that occur in running text, after André '
 			'Fuchs\u2019s kerning-pairs, whether or not the list above asks '
 			'for them')
-		# WHAT A RUN PUTS IN THE FONT, ASKED WHERE THE RUN IS STARTED - not in
-		# the settings window, which is about what a bubble is shaped like. A
-		# wall does not change because the pair it kerns was written under a
-		# group name.
-		tab0.group1.writeGroups = vanilla.CheckBox('auto', 'Write groups, not pairs',
-			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_KERN_GROUPS, False)),
-			callback=self.toggleWriteGroups, sizeStyle='small')
-		tab0.group1.writeGroups.getNSButton().setToolTip_(
-			'Kern the groups the bubbles fall into, so one pair covers every '
-			'glyph that shares a wall')
-		tab0.group1.allButton = vanilla.Button('auto', "Kern All Pairs", sizeStyle="regular", callback=self.PolyKernMain)
-		tab0.group1.selButton = vanilla.Button('auto', "Kern Pairs for Selected Glyphs", sizeStyle="regular", callback=self.PolyKernMain)
+		# ONE BUTTON. What a run covers is decided in the list now - the Kern
+		# column - rather than by which of two buttons was pressed.
+		tab0.group1.applyButton = vanilla.Button('auto', "Apply Kerning",
+			sizeStyle="regular", callback=self.PolyKernMain)
 		rules = [
-			'H:|-[includeRelevant]-[writeGroups]-[progress]-[allButton(==selButton)]-[selButton]-|',
+			'H:|-[includeRelevant]-[progress]-[applyButton]-|',
 			'V:|-(12)-[includeRelevant(18)]',
-			'V:|-(12)-[writeGroups(18)]',
 			'V:|-(8)-[progress]-|',
-			'V:|-(8)-[allButton]-|',
-			'V:|-(8)-[selButton]-|',
+			'V:|-(8)-[applyButton]-|',
 		]
 		tab0.group1.addAutoPosSizeRules(rules, metrics)
 
@@ -468,6 +472,42 @@ class PolyKernKerner(GeneralPlugin):
 			'V:|[group0][group1]|',
 		]
 		tab0.addAutoPosSizeRules(rules, None)
+
+	# SMALL ENOUGH TO SIT ON THE LIST WITHOUT COVERING A ROW.
+	LIST_BUTTON_W, LIST_BUTTON_H = 26.0, 20.0
+	LIST_BUTTON_INSET, LIST_BUTTON_GAP = 6.0, 3.0
+
+	@objc.python_method
+	def pinListButtons(self, group):
+		"""Sit the add and delete buttons on the list's bottom right corner.
+
+		AFTER `addAutoPosSizeRules`, and left out of its rules: vanilla places
+		what its rules name and would otherwise put these two in a row under
+		the list. Drawing over it is a matter of subview order, and both were
+		made after the list, so they are already on top.
+		"""
+		try:
+			listView = group.permList.getNSScrollView()
+			add = group.addButton.getNSButton()
+			delete = group.delButton.getNSButton()
+			pinned = []
+			for button in (add, delete):
+				button.setTranslatesAutoresizingMaskIntoConstraints_(False)
+				pinned += [
+					button.widthAnchor().constraintEqualToConstant_(self.LIST_BUTTON_W),
+					button.heightAnchor().constraintEqualToConstant_(self.LIST_BUTTON_H),
+					button.bottomAnchor().constraintEqualToAnchor_constant_(
+						listView.bottomAnchor(), -self.LIST_BUTTON_INSET),
+				]
+			pinned += [
+				delete.trailingAnchor().constraintEqualToAnchor_constant_(
+					listView.trailingAnchor(), -self.LIST_BUTTON_INSET),
+				add.trailingAnchor().constraintEqualToAnchor_constant_(
+					delete.leadingAnchor(), -self.LIST_BUTTON_GAP),
+			]
+			NSLayoutConstraint.activateConstraints_(pinned)
+		except Exception:
+			log(f'pinListButtons error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def buildFontTab(self):
@@ -658,6 +698,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					dictToSet['Left'] = perm[0]
 					dictToSet['Right'] = perm[1]
 					dictToSet['Add Flipped'] = perm[2]
+					# THE FOURTH IS NEW. Presets saved before the Kern column
+					# existed are three long, and every row in them was on.
+					dictToSet['Kern'] = bool(perm[3]) if len(perm) > 3 else True
 					pairsCount = self.pairsCount(perm[0], perm[1], perm[2])
 					dictToSet['Pairs'] = pairsCount
 					permutations.append(dictToSet)
@@ -679,7 +722,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				# need to load something
 				self.loadPreferences()
 			elif option == 2: # making new list
-				self.presetsDic[self.loadedPresetName] = [('A B C', 'X Y Z', True)]
+				self.presetsDic[self.loadedPresetName] = [('A B C', 'X Y Z', True, True)]
 			else: # saving
 				permList = self.w.tabs[0].group0.permList.get()
 				perms = []
@@ -688,6 +731,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					perm.append(item['Left'])
 					perm.append(item['Right'])
 					perm.append(item['Add Flipped'])
+					perm.append(item.get('Kern', True))
 					perms.append(perm)
 				self.presetsDic[self.loadedPresetName] = perms
 
@@ -741,13 +785,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			log(f'toggleIncludeRelevant error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def toggleWriteGroups(self, sender=None):
-		try:
-			Glyphs.defaults[PKAutoBubble.PREF_KERN_GROUPS] = bool(sender.get())
-		except Exception:
-			log(f'toggleWriteGroups error: {traceback.format_exc()}', error=True)
-
-	@objc.python_method
 	def presetPairs(self, permutations) -> set:
 		"""Every pair these rows ask for, deduped. -> {(str, str)}
 
@@ -756,6 +793,8 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		"""
 		pairs = set()
 		for row in permutations:
+			if not row.get('Kern', True):
+				continue  # switched off in the Kern column
 			lefts = self.cleanUpText(row['Left']) or []
 			rights = self.cleanUpText(row['Right']) or []
 			pairs.update((left, right) for left in lefts for right in rights)
@@ -966,7 +1005,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			permList = self.w.tabs[0].group0.permList
 			listToSet = permList.get()
-			listToSet += [{'Left': 'A B C', 'Right': 'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
+			listToSet += [{'Kern': True, 'Left': 'A B C', 'Right': 'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
 			permList.set(listToSet)
 
 			# enable delButton if there's multiple: maybe move elsewhere
@@ -998,12 +1037,10 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			self.font.disableUpdateInterface()
 
-			selGlyphs = True if sender == self.w.tabs[0].group1.selButton else False
-
 			self.w.tabs[0].group1.progress.set(0)
 			self.w.tabs[0].group1.progress.show(True)
 
-			for progress in PKCommonLogic.kernOpenType(presetName=self.loadedPresetName, selectedLayersOnly=selGlyphs):
+			for progress in PKCommonLogic.kernOpenType(presetName=self.loadedPresetName):
 
 				self.w.tabs[0].group1.progress.set(progress)
 
