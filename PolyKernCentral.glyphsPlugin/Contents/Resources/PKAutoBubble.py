@@ -446,6 +446,94 @@ def cluster_kern_side(profiles, tolerance, step, rounds=MEDOID_ROUNDS):
     }
 
 
+# --- The other road to a group -------------------------------------------
+
+# WHERE A RUN GETS ITS GROUPS FROM. The wall a group's representative carries
+# is measured the same way either road - the scan does not know or care why
+# two glyphs ended up together - so all this decides is who shares with whom.
+BY_SHAPE = "shape"
+BY_KERNING_GROUPS = "kerning"
+
+
+def kerning_side_group(glyph, side):
+    """What the FONT's own kerning calls this side of this glyph. -> str
+
+    The plain mapping: the left side reads `leftKerningGroup`. It is written
+    down because the spelling a kerning table uses says the opposite - the
+    group on a glyph's LEFT is consulted when the glyph is on the RIGHT of a
+    pair, and is therefore written `@MMK_R_`, which is an invitation to swap
+    the two here and have every group come out mirrored.
+
+    Empty string for a glyph that is in no group, so that a missing attribute,
+    a None and a blank field are one answer rather than three.
+    """
+    attribute = "leftKerningGroup" if side == LEFT else "rightKerningGroup"
+    return getattr(glyph, attribute, None) or ""
+
+
+def kerning_group_members(font, side, names=None):
+    """Every kerning group on this side, with who is in it. -> {group: [names]}
+
+    GROUPS OF ONE ARE LEFT OUT, the same rule the shape road follows: a glyph
+    alone in its group has nobody to borrow a wall from, and a band of one
+    cell says nothing to anybody looking at it.
+
+    `names`, when given, is the only set of glyphs considered - so a run over
+    a selection groups the selected glyphs among themselves and does not put a
+    reference on one pointing at a glyph the run never measured.
+    """
+    members = {}
+    for glyph in font.glyphs:
+        if names is not None and glyph.name not in names:
+            continue
+        group = kerning_side_group(glyph, side)
+        if group:
+            members.setdefault(group, []).append(glyph.name)
+    return {group: sorted(who) for group, who in members.items() if len(who) > 1}
+
+
+def kerning_group_anchor(group, members, profiles, step, limits=None):
+    """Which member of a kerning group carries the wall. -> one of `members`
+
+    THE GLYPH THE GROUP IS NAMED AFTER, when it is one of them. A designer who
+    has written `n` in twelve glyphs' group field has already said which glyph
+    is the model, and picking a different one here would be this plugin
+    overruling a decision it was asked to follow.
+
+    Failing that - a group called `stem`, or one whose `n` had no ink to scan -
+    fall back to the shape road's own answer, the plainest name among the most
+    central.
+    """
+    if group in members:
+        return group
+    return kern_group_name(members, profiles, step, limits)
+
+
+def kerning_group_clusters(font, profiles, side, step, limits=None):
+    """The font's kerning groups, in the shape the plan wants them.
+
+    -> {representative: [members]}, exactly what `cluster_kern_side` returns.
+
+    ONLY GLYPHS THAT WERE MEASURED get in: `profiles` is what the scan could
+    read, and a glyph with no ink has no wall to lend or to borrow, whatever
+    its kerning group says about it.
+    """
+    clusters = {}
+    for group, members in kerning_group_members(font, side, set(profiles)).items():
+        clusters[kerning_group_anchor(group, members, profiles, step, limits)] = members
+    return clusters
+
+
+def kerning_groups_present(font, sides=(LEFT, RIGHT), names=None):
+    """How many groups a kerning-group run would have to work from. -> int
+
+    Asked BEFORE anything is measured. A font with no kerning groups gets told
+    so in the time it takes to read an attribute off every glyph, rather than
+    after the whole font has been scanned to produce nothing.
+    """
+    return sum(len(kerning_group_members(font, side, names)) for side in sides)
+
+
 def rows_from_segments(segments, step):
     """Scanline crossings of flattened line segments. -> {row: (min_x, max_x)}
 
@@ -1723,7 +1811,7 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
                      max_nodes=DEFAULT_MAX_NODES, grid=0,
                      tolerance_em=GROUP_TOL_EM, sides=(LEFT, RIGHT),
                      slope=WALL_SLOPE, max_inset=None, amplitude=AMPLITUDE,
-                     align=None, progress=None, names=None):
+                     align=None, progress=None, names=None, source=BY_SHAPE):
     """Everything a font-wide run would write, decided before anything is.
 
     -> {side: {"nodes": {glyph: [(x, y)]}, "refer": {member: representative}}}
@@ -1739,6 +1827,12 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
     would have matched something elsewhere in the font is drawn its own wall.
     Anything else would be a run whose answer depended on glyphs it was told
     not to look at.
+
+    `source` picks where the groups come from: BY_SHAPE measures which sides
+    kern alike, BY_KERNING_GROUPS takes the groups the font already has. ONLY
+    THE GROUPING CHANGES. Every wall is scanned, built and simplified the same
+    way either road, so the two differ in who shares a wall and in nothing
+    else.
     """
     if step is None:
         step = raster_step(font)
@@ -1753,7 +1847,10 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
     plan = {}
     for side in sides:
         profiles = measured[side]
-        groups = cluster_kern_side(profiles, group_tolerance, step)
+        if source == BY_KERNING_GROUPS:
+            groups = kerning_group_clusters(font, profiles, side, step)
+        else:
+            groups = cluster_kern_side(profiles, group_tolerance, step)
         refer = {
             member: representative
             for representative, members in groups.items()

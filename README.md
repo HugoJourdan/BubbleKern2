@@ -24,7 +24,7 @@ It’s a work in progress and purposefully unavailable on Plugin Manager for now
 - Automatic bubbles: each side is measured from the ink profile of the glyph and pushed out by one gap, so a bubble follows the outline instead of being drawn node by node.
 - Four ways to give a side its shape: draw it by hand, type `auto` to keep it generated from the outline, type another glyph’s name to borrow that glyph’s bubble, or type `=|` to mirror the other side of the same glyph.
 - Composite glyphs: a composite takes its bubbles from its components, so Á kerns as the A and the accent it is made of.
-- Set Refer Glyphs automatically: groups the glyphs whose sides kern alike, and shows the result as the glyphs themselves with the measured bubble drawn on each.
+- Set PolyKern Groups automatically: groups the glyphs that share a side — either by measuring which sides kern alike, or by following the kerning groups the font already has — and shows the result as the glyphs themselves with the measured bubble drawn on each.
 - Settings panel: a floating window with a live preview — a line of text spaced by the bubbles, redrawn as the sliders move.
 - PolyKern parameter: the settings are stored per font or per master as a custom parameter, with its own editor in Font Info.
 - Set Bubble Settings based on Kerning: solves for the gap that best reproduces the kerning already in the font, so an existing family can be matched rather than respaced.

@@ -924,3 +924,167 @@ def test_no_names_still_means_the_whole_font(monkeypatch):
     font = SimpleNamespace(upm=1000, glyphs=[])
     pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10, tolerance=5)
     assert seen["names"] is None
+
+
+# --- Grouping on the font's own kerning groups -------------------------------
+# A font that has been kerned already holds an answer to "which glyphs share a
+# side" - one somebody decided on and has been kerning against. Measuring the
+# shapes afresh proposes a second, different set of groups for the same font,
+# which is why this road exists beside the shape one.
+
+
+class _GroupedGlyph:
+    def __init__(self, name, left=None, right=None):
+        self.name = name
+        if left is not None:
+            self.leftKerningGroup = left
+        if right is not None:
+            self.rightKerningGroup = right
+
+
+class _GroupedFont:
+    upm = 1000
+
+    def __init__(self, *glyphs):
+        self.glyphs = list(glyphs)
+
+
+def test_the_left_side_reads_the_left_group():
+    """The spelling a kerning table uses says the opposite - a glyph's LEFT
+    group is written `@MMK_R_` - which is an invitation to swap these two."""
+    glyph = _GroupedGlyph("aacute", left="a", right="o")
+    assert pk.kerning_side_group(glyph, pk.LEFT) == "a"
+    assert pk.kerning_side_group(glyph, pk.RIGHT) == "o"
+
+
+def test_no_group_is_one_answer_and_not_three():
+    """A missing attribute, a None and a blank field all mean the same."""
+    assert pk.kerning_side_group(_GroupedGlyph("a"), pk.LEFT) == ""
+    assert pk.kerning_side_group(_GroupedGlyph("a", left=None), pk.LEFT) == ""
+    assert pk.kerning_side_group(_GroupedGlyph("a", left=""), pk.LEFT) == ""
+
+
+def test_the_members_of_each_group():
+    font = _GroupedFont(
+        _GroupedGlyph("n", left="n"),
+        _GroupedGlyph("m", left="n"),
+        _GroupedGlyph("h", left="n"),
+        _GroupedGlyph("o", left="o"),
+        _GroupedGlyph("c", left="o"),
+    )
+    assert pk.kerning_group_members(font, pk.LEFT) == {
+        "n": ["h", "m", "n"], "o": ["c", "o"]}
+
+
+def test_a_group_of_one_is_not_a_group():
+    """Nobody borrows from it, and a band of one cell says nothing."""
+    font = _GroupedFont(
+        _GroupedGlyph("n", left="n"),
+        _GroupedGlyph("o", left="o"),
+        _GroupedGlyph("c", left="o"),
+    )
+    assert list(pk.kerning_group_members(font, pk.LEFT)) == ["o"]
+
+
+def test_a_run_over_a_selection_groups_the_selection():
+    """Not a reference pointing at a glyph the run never measured."""
+    font = _GroupedFont(
+        _GroupedGlyph("n", left="n"),
+        _GroupedGlyph("m", left="n"),
+        _GroupedGlyph("h", left="n"),
+    )
+    assert pk.kerning_group_members(font, pk.LEFT, names={"n", "m"}) == {
+        "n": ["m", "n"]}
+    # And down to one member, the group goes with it.
+    assert pk.kerning_group_members(font, pk.LEFT, names={"n"}) == {}
+
+
+def test_the_glyph_the_group_is_named_after_carries_the_wall(monkeypatch):
+    """A designer who wrote `n` in twelve group fields has already said which
+    glyph is the model."""
+    def refuse(*a, **k):
+        raise AssertionError("overruled the designer")
+    monkeypatch.setattr(pk, "kern_group_name", refuse)
+    assert pk.kerning_group_anchor("n", ["h", "m", "n"], {}, 10) == "n"
+
+
+def test_a_group_named_after_no_glyph_falls_back_to_the_shape_road(monkeypatch):
+    """`stem`, or a group whose `n` had no ink to scan."""
+    seen = {}
+
+    def chosen(members, profiles, step, limits=None):
+        seen["members"] = members
+        return "m"
+
+    monkeypatch.setattr(pk, "kern_group_name", chosen)
+    assert pk.kerning_group_anchor("stem", ["h", "m"], {}, 10) == "m"
+    assert seen["members"] == ["h", "m"]
+
+
+def test_only_glyphs_that_were_measured_get_into_a_cluster():
+    """A glyph with no ink has no wall to lend or to borrow, whatever its
+    kerning group says about it."""
+    font = _GroupedFont(
+        _GroupedGlyph("n", left="n"),
+        _GroupedGlyph("m", left="n"),
+        _GroupedGlyph("space", left="n"),
+    )
+    clusters = pk.kerning_group_clusters(font, {"n": {0: 1.0}, "m": {0: 1.0}},
+                                         pk.LEFT, 10)
+    assert clusters == {"n": ["m", "n"]}
+
+
+def test_how_many_groups_a_run_would_have_to_work_from():
+    font = _GroupedFont(
+        _GroupedGlyph("n", left="n", right="n"),
+        _GroupedGlyph("m", left="n", right="n"),
+        _GroupedGlyph("o", left="o"),
+        _GroupedGlyph("c", left="o"),
+    )
+    assert pk.kerning_groups_present(font, (pk.LEFT,)) == 2
+    assert pk.kerning_groups_present(font, (pk.RIGHT,)) == 1
+    assert pk.kerning_groups_present(font, (pk.LEFT, pk.RIGHT)) == 3
+    assert pk.kerning_groups_present(_GroupedFont(_GroupedGlyph("n"))) == 0
+
+
+def _stubPlanScan(monkeypatch, profiles):
+    """A plan run with the measuring canned. -> nothing"""
+    monkeypatch.setattr(pk, "collect_sides", lambda font, master, step,
+                        progress=None, names=None: (
+        {pk.LEFT: dict(profiles), pk.RIGHT: dict(profiles)},
+        {name: (0.0, 700.0, 500.0) for name in profiles}))
+    monkeypatch.setattr(pk, "nodes_from_profile", lambda *a, **k: [(0, 0)])
+
+
+def test_the_kerning_road_never_asks_the_shape_one(monkeypatch):
+    """Two roads to a group, and taking one means not taking the other."""
+    _stubPlanScan(monkeypatch, {"n": {0: 1.0}, "m": {0: 1.0}})
+
+    def refuse(*a, **k):
+        raise AssertionError("measured the shapes anyway")
+
+    monkeypatch.setattr(pk, "cluster_kern_side", refuse)
+    font = _GroupedFont(_GroupedGlyph("n", left="n", right="n"),
+                        _GroupedGlyph("m", left="n", right="n"))
+    plan = pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10,
+                               tolerance=5, gap=20,
+                               source=pk.BY_KERNING_GROUPS)
+    assert plan[pk.LEFT]["refer"] == {"m": "n"}
+    # The representative is the one carrying a drawing; the member is not.
+    assert sorted(plan[pk.LEFT]["nodes"]) == ["n"]
+
+
+def test_the_shape_road_is_still_the_default(monkeypatch):
+    _stubPlanScan(monkeypatch, {"n": {0: 1.0}, "m": {0: 1.0}})
+    asked = []
+    monkeypatch.setattr(pk, "cluster_kern_side",
+                        lambda *a, **k: asked.append(1) or {})
+
+    def refuse(*a, **k):
+        raise AssertionError("read the kerning groups without being asked")
+
+    monkeypatch.setattr(pk, "kerning_group_clusters", refuse)
+    font = _GroupedFont(_GroupedGlyph("n", left="n"), _GroupedGlyph("m", left="n"))
+    pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10, tolerance=5,
+                        gap=20)
+    assert asked == [1, 1], "one clustering a side"

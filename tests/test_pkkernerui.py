@@ -683,8 +683,8 @@ def test_a_font_with_no_references_says_so(window):
 	Glyphs.font.selectedFontMaster = master
 	plugin.showPane(plugin.GROUPS)
 	said = plugin.w.groupsPane.caption.get()
-	assert 'Kerning Key' in said, said
-	assert 'Refer' not in said, 'the old wording'
+	assert 'PolyKern Group' in said, said
+	assert 'Refer' not in said and 'Kerning Key' not in said, 'the old wording'
 
 
 def test_with_no_font_the_pane_says_that_instead(window, monkeypatch):
@@ -805,7 +805,7 @@ def test_the_caption_and_the_buttons_are_spaced_apart(window):
 def test_the_groups_pane_offers_the_command(window):
 	plugin, _ = window
 	button = plugin.w.groupsPane.autoButton
-	assert button.getTitle() == 'Set Kerning Keys Automatically…'
+	assert button.getTitle() == 'Set PolyKern Groups Automatically…'
 
 
 def test_the_button_is_wide_enough_for_its_own_title(window):
@@ -830,7 +830,7 @@ def test_the_settings_menu_has_let_it_go(withTool):
 	plugin, tool = withTool
 	titles = [title for title, _ in tool.actionMenuItems()]
 	assert not [t for t in titles if t and 'Refer Glyphs' in t], titles
-	assert not [t for t in titles if t and 'Kerning Keys' in t], titles
+	assert not [t for t in titles if t and 'PolyKern Groups' in t], titles
 	assert 'Set Bubble Settings based on Kerning…' in titles, 'took the wrong one'
 
 
@@ -840,7 +840,7 @@ def test_without_a_tool_the_button_says_so_rather_than_doing_nothing(window,
 	said = []
 	monkeypatch.setattr(kerner.PKCommonLogic, 'show_alert',
 			lambda *a, **k: said.append(a), raising=False)
-	plugin.setKerningKeys()
+	plugin.setPolyKernGroups()
 	assert said, 'silently did nothing'
 
 
@@ -889,8 +889,8 @@ def test_the_sheet_still_fits_what_it_holds(withTool):
 	tool.openAutoGroupWindow()
 	try:
 		height = tool.autoW.getNSWindow().contentView().frame().size.height
-		for name in ('sides', 'overwrite', 'onlySelected', 'cancel', 'apply',
-				'report'):
+		for name in ('source', 'sourceLabel', 'sides', 'sidesLabel',
+				'overwrite', 'onlySelected', 'cancel', 'apply', 'report'):
 			frame = getattr(tool.autoW, name)._nsObject.frame()
 			assert frame.origin.y >= -1, f'{name} above the top'
 			assert frame.origin.y + frame.size.height <= height + 1, \
@@ -986,3 +986,186 @@ def test_a_missing_file_falls_back_rather_than_leaving_a_hole(window,
 	plugin, _ = window
 	monkeypatch.setattr(plugin, 'KERNER_ICON', 'NoSuchIcon.pdf', raising=False)
 	assert plugin.kernerIcon() is None
+
+
+# --- Which road to a group ---------------------------------------------------
+# A font that has been kerned already holds an answer to "which glyphs share a
+# side". Measuring the shapes afresh proposes a second, different set of groups
+# for the same font, so the sheet asks which one the run should follow.
+
+
+def test_the_sheet_asks_which_road(withTool):
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		popup = tool.autoW.source
+		assert list(popup.getItems()) == ['Shape detection',
+				'Existing kerning groups']
+		assert popup.get() == 0, 'shape detection is the one that always works'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_titles_and_the_meanings_cannot_drift(withTool):
+	"""One tuple of pairs, not two parallel lists: parallel lists are one
+	reordering away from offering "Shape detection" and running the other."""
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		offered = list(tool.autoW.source.getItems())
+		assert offered == [title for title, _ in tool.AUTO_SOURCES]
+		assert [key for _, key in tool.AUTO_SOURCES] == [
+				kerner.PKAutoBubble.BY_SHAPE,
+				kerner.PKAutoBubble.BY_KERNING_GROUPS]
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_new_question_is_a_row_of_its_own(withTool):
+	"""A sheet's content view is NOT flipped, so the upper control has the
+	larger y."""
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		source = tool.autoW.source.getNSPopUpButton().frame()
+		sides = tool.autoW.sides.getNSPopUpButton().frame()
+		if tool.autoW.getNSWindow().contentView().isFlipped():
+			assert source.origin.y + source.size.height <= sides.origin.y
+		else:
+			assert sides.origin.y + sides.size.height <= source.origin.y
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_popup_is_wide_enough_for_its_longest_answer(withTool):
+	"""A truncated answer is one nobody can tell from the other."""
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		native = tool.autoW.source.getNSPopUpButton()
+		native.selectItemAtIndex_(1)  # 'Existing kerning groups', the long one
+		assert native.cell().cellSize().width <= native.frame().size.width + 1, \
+				f'{native.cell().cellSize().width:.0f} into {native.frame().size.width:.0f}'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_labels_are_wide_enough_for_themselves(withTool):
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		for name in ('sourceLabel', 'sidesLabel'):
+			native = getattr(tool.autoW, name)._nsObject
+			assert native.cell().cellSize().width <= tool.AUTO_LABEL_W + 1, \
+					f'{name} truncated'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+class _KernGrouped:
+	"""A glyph that is in a kerning group, as far as the run can tell."""
+
+	def __init__(self, name, left=None, right=None):
+		self.name = name
+		self.leftKerningGroup = left
+		self.rightKerningGroup = right
+
+
+def _stubRun(tool, monkeypatch, glyphs=()):
+	"""Everything applyAutoGroup leans on, canned. -> the kwargs the plan got"""
+	seen = {}
+	font = Glyphs.font
+	monkeypatch.setattr(font, 'glyphs', list(glyphs), raising=False)
+	monkeypatch.setattr(font, 'selectedFontMaster',
+			types.SimpleNamespace(id='m1', name='Regular'), raising=False)
+	monkeypatch.setattr(font, 'disableUpdateInterface', lambda: None, raising=False)
+	monkeypatch.setattr(font, 'enableUpdateInterface', lambda: None, raising=False)
+	auto = kerner.PKAutoBubble
+	monkeypatch.setattr(auto, 'auto_settings', lambda f, m: {
+			'gap': 20, 'step': 10, 'tolerance': 5, 'max_nodes': 8,
+			'slope': 1.0, 'max_inset': 80, 'amplitude': 1.0}, raising=False)
+	monkeypatch.setattr(auto, 'resolve_grid', lambda f, m: 0, raising=False)
+
+	def plan(*a, **k):
+		seen.update(k)
+		return {auto.LEFT: {'nodes': {}, 'refer': {}},
+				auto.RIGHT: {'nodes': {}, 'refer': {}}}
+
+	monkeypatch.setattr(auto, 'auto_bubble_plan', plan, raising=False)
+	monkeypatch.setattr(sys.modules['PKBubbleStore'], 'writePlan',
+			lambda *a, **k: (0, 0, 0), raising=False)
+	monkeypatch.setattr(tool, 'refreshAfterWrite', lambda: None, raising=False)
+	monkeypatch.setattr(tool, 'refreshGroupsPane', lambda: None, raising=False)
+	return seen
+
+
+def test_the_answer_reaches_the_run(withTool, monkeypatch):
+	plugin, tool = withTool
+	seen = _stubRun(tool, monkeypatch, [
+			_KernGrouped('n', left='n'), _KernGrouped('m', left='n')])
+	tool.openAutoGroupWindow()
+	try:
+		tool.autoW.source.set(1)
+		tool.applyAutoGroup(None)
+		assert seen.get('source') == kerner.PKAutoBubble.BY_KERNING_GROUPS
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_default_answer_reaches_it_too(withTool, monkeypatch):
+	plugin, tool = withTool
+	seen = _stubRun(tool, monkeypatch)
+	tool.openAutoGroupWindow()
+	try:
+		tool.applyAutoGroup(None)
+		assert seen.get('source') == kerner.PKAutoBubble.BY_SHAPE
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_a_font_with_no_kerning_groups_is_told_before_it_is_measured(withTool,
+		monkeypatch):
+	"""Not a whole-font scan that produces nothing and says so afterwards."""
+	plugin, tool = withTool
+	seen = _stubRun(tool, monkeypatch, [_KernGrouped('n'), _KernGrouped('m')])
+	tool.openAutoGroupWindow()
+	try:
+		tool.autoW.source.set(1)
+		tool.applyAutoGroup(None)
+		assert tool.autoW.report.get() == 'This font has no kerning groups.'
+		assert not seen, 'measured the font anyway'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_a_group_of_one_is_not_something_to_run_on(withTool, monkeypatch):
+	"""Every glyph in a group by itself is a font with no groups in it."""
+	plugin, tool = withTool
+	seen = _stubRun(tool, monkeypatch, [
+			_KernGrouped('n', left='n'), _KernGrouped('o', left='o')])
+	tool.openAutoGroupWindow()
+	try:
+		tool.autoW.source.set(1)
+		tool.applyAutoGroup(None)
+		assert tool.autoW.report.get() == 'This font has no kerning groups.'
+		assert not seen
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_summary_says_which_road_it_took(withTool, monkeypatch):
+	"""It is also the heading of the results sheet, and "42 grouped" means a
+	different thing depending on who decided the groups."""
+	plugin, tool = withTool
+	_stubRun(tool, monkeypatch, [
+			_KernGrouped('n', left='n'), _KernGrouped('m', left='n')])
+	tool.openAutoGroupWindow()
+	try:
+		tool.autoW.source.set(1)
+		tool.applyAutoGroup(None)
+		assert 'from kerning groups' in tool.autoW.report.get()
+		tool.autoW.source.set(0)
+		tool.applyAutoGroup(None)
+		assert 'by shape' in tool.autoW.report.get()
+	finally:
+		tool.closeAutoGroupWindow()

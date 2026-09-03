@@ -32,7 +32,7 @@ class Side(str):
 		"""The userData key this side keeps `concept` under. -> str
 
 		THE STORED NAMES, WHICH ARE NOT THE NAMES ON SCREEN. `Refer` is what
-		the interface calls a Kerning Key; the key in the file cannot follow
+		the interface calls a PolyKern Group; the key in the file cannot follow
 		the wording without every font already saved losing what it holds.
 
 		`Nodes`, `Refer`, `Mirror`, `Box`, `Auto`, `Export` - the six the file

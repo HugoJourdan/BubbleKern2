@@ -361,8 +361,8 @@ class PolyKernTool(SelectTool):
 		self.w.group.boxR = PillGroup("auto")
 		self.w.group.boxL.getNSView().isLeftSide = True
 		self.w.group.boxR.getNSView().isLeftSide = False
-		self.w.group.glyphNameL = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Kerning key')
-		self.w.group.glyphNameR = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Kerning key')
+		self.w.group.glyphNameL = CompletingEditText('auto', '', callback=self.infoBox, placeholder='PolyKern group')
+		self.w.group.glyphNameR = CompletingEditText('auto', '', callback=self.infoBox, placeholder='PolyKern group')
 		f0 = self.w.group.glyphNameL.getNSTextField()
 		f1 = self.w.group.glyphNameR.getNSTextField()
 		for field in (f0, f1):
@@ -2144,6 +2144,19 @@ class PolyKernTool(SelectTool):
 			return view.window() if view is not None else None
 		return None
 
+	# THE TWO ROADS TO A GROUP, in the order the popup offers them, each
+	# beside what it means. ONE TUPLE AND NOT TWO: parallel lists of titles
+	# and keys are one reordering away from offering "Shape detection" and
+	# running the other thing.
+	AUTO_SOURCES = (
+		('Shape detection', auto.BY_SHAPE),
+		('Existing kerning groups', auto.BY_KERNING_GROUPS),
+	)
+	# The label column and where the popups start after it. 'Group by' sets
+	# the width; a truncated label is a question nobody can read.
+	AUTO_LABEL_W = 54
+	AUTO_FIELD_X = 74
+
 	@objc.python_method
 	def openAutoGroupWindow(self):
 		try:
@@ -2157,31 +2170,44 @@ class PolyKernTool(SelectTool):
 			parent = self.sheetParent()
 			if parent is None:
 				return
-			# THREE QUESTIONS WIDE: everything else is set in the window this
+			# FOUR QUESTIONS WIDE: everything else is set in the window this
 			# sheet is standing on.
-			self.autoW = vanilla.Sheet((260, 154), parent)
+			self.autoW = vanilla.Sheet((300, 184), parent)
 			w = self.autoW
-			w.sidesLabel = vanilla.TextBox((15, 16, 40, 20), 'Sides', sizeStyle='small')
-			w.sides = vanilla.PopUpButton((60, 14, -15, 20), ['Both', 'Left', 'Right'])
-			# ON THE MARGIN, NOT UNDER THE POPUP. These are separate questions
-			# and only one of them has a label to be indented past.
-			w.overwrite = vanilla.CheckBox((18, 44, -15, 20),
+			# THE FIRST QUESTION, BECAUSE IT IS THE BIGGEST ONE. A font that
+			# has been kerned already has an answer to this in it - groups
+			# somebody decided on and has been kerning against - and measuring
+			# the shapes afresh would propose a second, different set of
+			# groups for the same font. The other three questions mean the
+			# same thing whichever road is taken.
+			w.sourceLabel = vanilla.TextBox((15, 16, self.AUTO_LABEL_W, 20),
+				'Group by', sizeStyle='small')
+			w.source = vanilla.PopUpButton((self.AUTO_FIELD_X, 14, -15, 20),
+				[title for title, _ in self.AUTO_SOURCES])
+			w.sidesLabel = vanilla.TextBox((15, 46, self.AUTO_LABEL_W, 20),
+				'Sides', sizeStyle='small')
+			w.sides = vanilla.PopUpButton((self.AUTO_FIELD_X, 44, -15, 20),
+				['Both', 'Left', 'Right'])
+			# ON THE MARGIN, NOT UNDER THE POPUPS. These are separate questions
+			# and only two of them have a label to be indented past.
+			w.overwrite = vanilla.CheckBox((18, 74, -15, 20),
 				'Overwrite existing bubbles', sizeStyle='small')
 			# A RUN OVER THE SELECTION IS A RUN OVER A SMALLER FONT. It groups
 			# the chosen glyphs among themselves and does not so much as
 			# measure the rest, which is also most of the time a run takes.
-			w.onlySelected = vanilla.CheckBox((18, 68, -15, 20),
+			w.onlySelected = vanilla.CheckBox((18, 98, -15, 20),
 				'Selected glyphs only', sizeStyle='small')
 			# THE FULL WIDTH BETWEEN THEM, so the sheet ends on one line.
-			w.cancel = vanilla.Button((15, 98, 100, 20), 'Cancel',
+			w.cancel = vanilla.Button((15, 128, 100, 20), 'Cancel',
 				callback=self.closeAutoGroupWindow)
-			w.apply = vanilla.Button((-115, 98, 100, 20), 'Apply',
+			w.apply = vanilla.Button((-115, 128, 100, 20), 'Apply',
 				callback=self.applyAutoGroup)
-			w.report = vanilla.TextBox((15, 126, -15, 20), '', sizeStyle='small')
+			w.report = vanilla.TextBox((15, 156, -15, 20), '', sizeStyle='small')
 			# NO HALOES. The default button is already saying where the return
-			# key goes, and a ring round the popup as well is the sheet shouting
-			# two answers to one question.
-			for control in (w.sides, w.overwrite, w.onlySelected, w.cancel, w.apply):
+			# key goes, and a ring round the popups as well is the sheet
+			# shouting two answers to one question.
+			for control in (w.source, w.sides, w.overwrite, w.onlySelected,
+					w.cancel, w.apply):
 				native = (control.getNSPopUpButton()
 					if hasattr(control, 'getNSPopUpButton') else control.getNSButton())
 				native.setFocusRingType_(NSFocusRingTypeNone)
@@ -2214,6 +2240,17 @@ class PolyKernTool(SelectTool):
 			master = font.selectedFontMaster
 			settings = auto.auto_settings(font, master)
 			sides = ((auto.LEFT, auto.RIGHT), (auto.LEFT,), (auto.RIGHT,))[w.sides.get()]
+			source = self.AUTO_SOURCES[w.source.get()][1]
+			# ALSO BEFORE ANYTHING IS MEASURED, and for the same reason. Asked
+			# to follow the font's kerning groups where there are none, the
+			# honest answer is to say so in the second it takes to read an
+			# attribute off every glyph - not to scan the whole font and then
+			# report that it grouped nothing.
+			if source == auto.BY_KERNING_GROUPS and not auto.kerning_groups_present(
+					font, sides, names):
+				w.report.set('Nothing is grouped in the selection.' if names is not None
+					else 'This font has no kerning groups.')
+				return
 			overwrite = bool(w.overwrite.get())
 			grid = auto.resolve_grid(font, master)
 
@@ -2225,15 +2262,20 @@ class PolyKernTool(SelectTool):
 					gap=settings['gap'], step=settings['step'],
 					tolerance=settings['tolerance'], max_nodes=settings['max_nodes'],
 					grid=grid, sides=sides, slope=settings['slope'], max_inset=settings['max_inset'], amplitude=settings['amplitude'],
-					names=names,
+					names=names, source=source,
 				)
 				drawn, referred, kept = store.writePlan(font, master, plan, sides, overwrite)
 			finally:
 				font.enableUpdateInterface()
 
-			summary = f'{drawn} drawn, {referred} grouped, {kept} left alone'
+			# WHICH ROAD IS IN THE SUMMARY, because the summary is also the
+			# heading of the results sheet, and "42 grouped" means a different
+			# thing depending on who decided the groups.
+			road = ('from kerning groups' if source == auto.BY_KERNING_GROUPS
+				else 'by shape')
+			summary = f'{drawn} drawn, {referred} grouped {road}, {kept} left alone'
 			w.report.set(summary)
-			log(f'Set Kerning Keys automatically: {summary}')
+			log(f'Set PolyKern Groups automatically: {summary}')
 			report(summary)
 			# THE QUESTIONS GO AWAY AND THE ANSWER TAKES THEIR PLACE. One turn of
 			# the run loop between them, because a sheet cannot be put up on a
@@ -2565,7 +2607,7 @@ class PolyKernTool(SelectTool):
 			w.copyButton.getNSButton().setImage_(gear)
 			w.copyButton.getNSButton().setImagePosition_(NSImageOnly)
 		w.copyButton.getNSButton().setToolTip_(
-			'Set the refer glyphs automatically, fit these settings to the '
+			'Set the PolyKern groups automatically, fit these settings to the '
 			'kerning already in the font, or copy '
 			'them as a custom parameter')
 

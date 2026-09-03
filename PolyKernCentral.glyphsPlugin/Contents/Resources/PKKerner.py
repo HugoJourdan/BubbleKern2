@@ -524,11 +524,11 @@ class PolyKernKerner(GeneralPlugin):
 
 		A REFERENCE IS THE ONLY PLACE TWO GLYPHS REALLY DO SHARE A FINGERPRINT.
 		Two walls that came out the same shape are still two walls, and drift
-		apart the moment either glyph is touched; a kerning key is one wall
+		apart the moment either glyph is touched; a PolyKern group is one wall
 		read from two places. So this is a picture of the references, not of
 		what happens to look alike.
 
-		THE GRID IS THE ONE Set Kerning Keys Automatically SHOWS. It draws each
+		THE GRID IS THE ONE Set PolyKern Groups Automatically SHOWS. It draws each
 		glyph with its measured wall on the side it was grouped on, which is
 		the whole point: a list of names cannot say whether a grouping is any
 		good, and the glyphs side by side say it at a glance.
@@ -540,8 +540,8 @@ class PolyKernKerner(GeneralPlugin):
 			# grid that shows what it did.
 			pane.autoButton = vanilla.Button(
 				(-self.AUTO_BUTTON_W - 15, 10, self.AUTO_BUTTON_W, 20),
-				'Set Kerning Keys Automatically…', sizeStyle='small',
-				callback=self.setKerningKeys)
+				'Set PolyKern Groups Automatically…', sizeStyle='small',
+				callback=self.setPolyKernGroups)
 			pane.caption = vanilla.TextBox(
 				(15, 12, -self.AUTO_BUTTON_W - 30, 32), '', sizeStyle='small')
 			# THE WIDTH IS A PLACEHOLDER. The scroll view sets its document
@@ -556,10 +556,10 @@ class PolyKernKerner(GeneralPlugin):
 
 	# WIDE ENOUGH FOR ITS OWN TITLE. A vanilla Button truncates rather than
 	# growing, and a truncated command is one nobody presses.
-	AUTO_BUTTON_W = 215
+	AUTO_BUTTON_W = 230
 
 	@objc.python_method
-	def setKerningKeys(self, sender=None):
+	def setPolyKernGroups(self, sender=None):
 		"""Hand the run to the tool, which owns it and the sheet it asks with.
 
 		THE TOOL, NOT THIS PLUGIN. Measuring a wall is the tool's work and the
@@ -572,21 +572,21 @@ class PolyKernKerner(GeneralPlugin):
 			if tool is None:
 				# THE TOOL IS A SEPARATE PRINCIPAL CLASS of this bundle and may
 				# not have been made yet.
-				PKCommonLogic.show_alert('Set Kerning Keys Automatically',
+				PKCommonLogic.show_alert('Set PolyKern Groups Automatically',
 					'The PolyKern tool has not loaded yet. Pick it in the '
 					'toolbar once, then try again.', cancel=False)
 				return
 			tool.openAutoGroupWindow()
 		except Exception:
-			log(f'setKerningKeys error: {traceback.format_exc()}', error=True)
+			log(f'setPolyKernGroups error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def groupsCaption(self, groups) -> str:
 		"""What the grid below adds up to, in words. -> str"""
 		if not groups:
 			return ('No glyph borrows a wall from another one in this master. '
-				'Put a glyph name in a side\u2019s Kerning Key field, or run Set '
-				'Kerning Keys Automatically, and the groups appear here.')
+				'Put a glyph name in a side\u2019s PolyKern Group field, or run Set '
+				'PolyKern Groups Automatically, and the groups appear here.')
 		# ACROSS BOTH SIDES: a glyph can be in a left group and a right one,
 		# and it is still one glyph.
 		glyphs = len({name for group in groups for name in group['members']})
