@@ -234,8 +234,8 @@ bubbleDrawingIsActive = False  # True if I want to draw all the time
 class PolyKernTool(SelectTool):
 	bubbles: dict[str, list[BubbleNode]]
 
-	# THE MARK IS 17 POINTS TALL WHATEVER THE ARTWORK IS - the mark, not the
-	# page it was drawn on. Glyphs draws a tool icon at the image's own size
+	# THE MARK IS TOOLBAR_ICON_HEIGHT TALL WHATEVER THE ARTWORK IS - the mark,
+	# not the page it was drawn on. Glyphs draws a tool icon at the image's own size
 	# and neither fits it to the bar nor distorts it: an 18 point image whose
 	# ink filled 65% of its page drew 12 points of mark, and kept its
 	# proportions doing it (23x24 screen pixels for an ink box of 49.6x53).
@@ -244,8 +244,18 @@ class PolyKernTool(SelectTool):
 	# later, and one that leaves the mark off centre when the margins are
 	# uneven - `setToolbarIcon` finds the ink itself and draws only that.
 	# Neighbours to match: the text tool 15 points, annotate 15.5, the hand 18.
+	#
+	# AND IT IS CENTRED BY BEING DRAWN ON A CANVAS THE SIZE OF THE SLOT.
+	# Glyphs centres a tool icon vertically in its button but hangs it off the
+	# LEFT of the slot horizontally, so an image narrower than the slot sits
+	# left of centre: measured off the button, ink 34x34 px in a button 60x44,
+	# with gaps of 8 left / 18 right but 6 top / 4 bottom. Those left gaps put
+	# the slot at 44 px - 22 points - centred in the button. Fill that square
+	# and the mark comes out in the middle whether Glyphs left-aligns the image
+	# or centres it.
 	TOOLBAR_ICON = 'PolyKernIcon.pdf'
-	TOOLBAR_ICON_HEIGHT = 17.0
+	TOOLBAR_ICON_HEIGHT = 16.15  # 5% under the 17 that matched the neighbours
+	TOOLBAR_ICON_CANVAS = 22.0  # the slot Glyphs lays out for a tool icon
 	INK_SEARCH_SCALE = 4  # pixels per point while hunting for the ink
 	INK_SEARCH_FLOOR = 8  # alpha out of 255 below which a pixel is not ink
 
@@ -311,21 +321,38 @@ class PolyKernTool(SelectTool):
 			(bottom - top + 1) / scale)
 
 	@objc.python_method
-	def trimmedIcon(self, image, height):
-		"""`image` cropped to its ink and scaled until that ink is `height` tall.
+	def trimmedIcon(self, image, height, canvas=None):
+		"""`image`'s ink, `height` points tall, centred on a square `canvas`.
+
+		The canvas is what does the centring - see TOOLBAR_ICON_CANVAS. It is
+		never smaller than the mark, so an oversized `height` widens the canvas
+		rather than cropping.
 
 		Drawn on demand rather than baked into a bitmap, so the artwork stays
 		vector and stays sharp at whatever the screen asks for.
 		"""
+		if canvas is None:
+			canvas = self.TOOLBAR_ICON_CANVAS
 		ink = self.inkBounds(image)
 		if ink is None or not ink.size.height:
 			return None
 		scale = height / ink.size.height
-		size = NSMakeSize(ink.size.width * scale, height)
+		wide = ink.size.width * scale
+		size = NSMakeSize(max(canvas, wide), max(canvas, height))
+		# where the mark goes on that canvas, in the canvas's own points
+		box = NSMakeRect((size.width - wide) / 2.0, (size.height - height) / 2.0,
+				wide, height)
 
 		def drawInk(rect):
+			# `rect` is wherever the icon is being drawn, which need not be the
+			# size the canvas was cut at, so put the mark on it proportionally
+			across = rect.size.width / size.width
+			down = rect.size.height / size.height
 			image.drawInRect_fromRect_operation_fraction_(
-				rect, ink, NSCompositingOperationSourceOver, 1.0)
+				NSMakeRect(rect.origin.x + box.origin.x * across,
+						rect.origin.y + box.origin.y * down,
+						box.size.width * across, box.size.height * down),
+				ink, NSCompositingOperationSourceOver, 1.0)
 			return True
 
 		icon = NSImage.imageWithSize_flipped_drawingHandler_(size, False, drawInk)

@@ -394,6 +394,7 @@ class _Sizer:
 	INK_SEARCH_SCALE = Tool.INK_SEARCH_SCALE
 	INK_SEARCH_FLOOR = Tool.INK_SEARCH_FLOOR
 	TOOLBAR_ICON_HEIGHT = Tool.TOOLBAR_ICON_HEIGHT
+	TOOLBAR_ICON_CANVAS = Tool.TOOLBAR_ICON_CANVAS
 	inkBounds = Tool.inkBounds
 	trimmedIcon = Tool.trimmedIcon
 
@@ -437,34 +438,63 @@ def test_the_shipped_artwork_has_margins_to_lose(sizer):
 	assert ink.size.height < page.height, 'artwork already trimmed vertically'
 
 
-def test_the_icon_is_the_asked_for_height(sizer):
+def test_the_mark_is_the_asked_for_height(sizer):
+	"""The mark, measured on the finished icon - not the canvas it sits on."""
 	icon = sizer.trimmedIcon(_painted((40, 40), (5, 8, 10, 20)), 17.0)
-	assert icon.size().height == pytest.approx(17.0)
+	assert sizer.inkBounds(icon).size.height == pytest.approx(17.0, abs=0.5)
 
 
 def test_the_icon_is_sized_off_the_ink_not_the_page(sizer):
-	"""The whole point. Same mark, twice the page: the same icon either way."""
+	"""Same mark, twice the page, margins moved: the same icon either way."""
 	tight = sizer.trimmedIcon(_painted((10, 20), (0, 0, 10, 20)), 17.0)
 	padded = sizer.trimmedIcon(_painted((60, 80), (25, 30, 10, 20)), 17.0)
 	assert tight.size().width == pytest.approx(padded.size().width, abs=0.5)
-	assert tight.size().height == pytest.approx(padded.size().height, abs=0.5)
+	assert sizer.inkBounds(tight).size.height == pytest.approx(
+			sizer.inkBounds(padded).size.height, abs=0.5)
 
 
-def test_the_icon_keeps_the_proportions_of_the_mark(sizer):
+def test_the_mark_keeps_the_proportions_of_the_artwork(sizer):
 	artwork = NSImage.alloc().initByReferencingFile_(str(ARTWORK))
-	ink = sizer.inkBounds(artwork)
-	icon = sizer.trimmedIcon(artwork, Tool.TOOLBAR_ICON_HEIGHT)
-	assert (icon.size().width / icon.size().height ==
-			pytest.approx(ink.size.width / ink.size.height, rel=0.02))
+	drawn = sizer.inkBounds(artwork)
+	mark = sizer.inkBounds(sizer.trimmedIcon(artwork, Tool.TOOLBAR_ICON_HEIGHT))
+	assert (mark.size.width / mark.size.height ==
+			pytest.approx(drawn.size.width / drawn.size.height, rel=0.03))
 
 
-def test_the_finished_icon_is_all_mark(sizer):
-	"""Measured again, the icon has no margin left anywhere."""
+def test_the_icon_fills_the_slot_glyphs_lays_out(sizer):
+	"""Narrower than the slot and Glyphs hangs it off the left. See the
+	comment on TOOLBAR_ICON_CANVAS."""
 	icon = sizer.trimmedIcon(NSImage.alloc().initByReferencingFile_(str(ARTWORK)),
 			Tool.TOOLBAR_ICON_HEIGHT)
-	ink = sizer.inkBounds(icon)
-	assert ink.size.height == pytest.approx(icon.size().height, abs=0.5)
-	assert ink.size.width == pytest.approx(icon.size().width, abs=0.5)
+	assert icon.size().width == pytest.approx(Tool.TOOLBAR_ICON_CANVAS)
+	assert icon.size().height == pytest.approx(Tool.TOOLBAR_ICON_CANVAS)
+
+
+def test_the_mark_is_centred_on_the_canvas(sizer):
+	"""What the whole canvas is for: equal air on both sides, and top to bottom."""
+	icon = sizer.trimmedIcon(NSImage.alloc().initByReferencingFile_(str(ARTWORK)),
+			Tool.TOOLBAR_ICON_HEIGHT)
+	mark, size = sizer.inkBounds(icon), icon.size()
+	left = mark.origin.x
+	right = size.width - (mark.origin.x + mark.size.width)
+	below = mark.origin.y
+	above = size.height - (mark.origin.y + mark.size.height)
+	assert left == pytest.approx(right, abs=0.5), f'left {left} right {right}'
+	assert below == pytest.approx(above, abs=0.5), f'below {below} above {above}'
+	# and there is air to be centred in - equal margins of nothing prove nothing
+	assert left > 0.5 and below > 0.5, f'no room around the mark: {left}, {below}'
+
+
+def test_a_mark_taller_than_the_slot_widens_the_canvas_rather_than_cropping(sizer):
+	icon = sizer.trimmedIcon(_painted((10, 10), (0, 0, 10, 10)), 40.0)
+	assert icon.size().height == pytest.approx(40.0)
+	assert sizer.inkBounds(icon).size.height == pytest.approx(40.0, abs=0.5)
+
+
+def test_the_mark_sits_a_touch_under_the_slot(sizer):
+	"""Room for the air that centres it, and 5% under the 17 that matched."""
+	assert Tool.TOOLBAR_ICON_HEIGHT < Tool.TOOLBAR_ICON_CANVAS
+	assert Tool.TOOLBAR_ICON_HEIGHT == pytest.approx(17.0 * 0.95, abs=0.01)
 
 
 def test_the_tool_sits_at_the_end_of_the_bar(sizer):
