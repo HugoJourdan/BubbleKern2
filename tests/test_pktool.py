@@ -12,6 +12,7 @@ import pathlib
 import sys
 
 import pytest
+from types import SimpleNamespace
 from Foundation import NSMakeRect, NSPoint
 
 RESOURCES = (pathlib.Path(__file__).parent.parent / 'PolyKernCentral.glyphsPlugin'
@@ -352,17 +353,76 @@ def test_the_kern_figures_always_stand_clear_below_the_line():
 			assert labelY + lineBox <= emBottom, f'on the band at {usableHeight}'
 
 
-def test_the_line_is_centred_by_eye_not_by_measure():
-	"""Centring the line together with the room reserved for the figures under
-	it is right to the point and reads wrong: the figures are small and faint,
-	so what the eye centres on is the word, and the word sat half that room
-	high in the box. The em box itself is what gets centred."""
+def test_the_band_the_eye_reads_is_what_gets_centred():
+	"""Nearly every letter stands between the baseline and the cap height. The
+	ascender above and the descender below are reached by a few, and empty
+	space does not read as part of a word - so centring the em box leaves the
+	line looking high, which is what it did, twice."""
 	foot = preview_module.PREVIEW_FOOT_ROOM
-	for usableHeight in (120.0, 190.0, 218.0, 400.0):
-		lineHeight = (usableHeight - preview_module.KERN_LABEL_ROOM) * 0.7
-		emBottom = preview_module.previewEmBottom(usableHeight, lineHeight)
-		centred = foot + (usableHeight - lineHeight) / 2.0
-		assert emBottom == pytest.approx(centred), usableHeight
+	for usableHeight in (190.0, 238.0, 400.0):
+		lineHeight = (usableHeight - preview_module.KERN_LABEL_ROOM) * 0.55
+		capBand = lineHeight * preview_module.CAP_BAND_EM
+		emBottom = preview_module.previewEmBottom(usableHeight, lineHeight, capBand)
+		middle = foot + usableHeight / 2.0
+		assert emBottom + capBand == pytest.approx(middle), usableHeight
+		# WHICH IS LOWER THAN CENTRING THE EM BOX, by the difference between
+		# the two middles - a tenth of the em, on ordinary metrics.
+		assert emBottom < foot + (usableHeight - lineHeight) / 2.0
+
+
+def test_the_band_comes_from_the_masters_own_cap_height():
+	"""So the centring follows the file rather than an assumption about it."""
+	master = SimpleNamespace(capHeight=700.0, descender=-250.0, ascender=750.0)
+	assert preview_module.capBandFor(master, 0.2) == pytest.approx(
+		(250.0 + 350.0) * 0.2)
+	# A DIFFERENT CAP HEIGHT MOVES IT, which is the whole reason for asking.
+	tall = SimpleNamespace(capHeight=800.0, descender=-250.0, ascender=750.0)
+	assert preview_module.capBandFor(tall, 0.2) > preview_module.capBandFor(master, 0.2)
+	# AND SO DOES A DIFFERENT DESCENDER: the band is measured up from the
+	# bottom of the em box, not from a number that is usually 250.
+	shallow = SimpleNamespace(capHeight=700.0, descender=-200.0, ascender=750.0)
+	assert preview_module.capBandFor(shallow, 0.2) == pytest.approx(
+		(200.0 + 350.0) * 0.2)
+
+
+def test_a_master_with_no_cap_height_is_no_band_at_all():
+	"""Nothing to go on, so `previewEmBottom` falls back to CAP_BAND_EM."""
+	for master in (SimpleNamespace(capHeight=0, descender=-250.0),
+			SimpleNamespace(capHeight=None, descender=-250.0),
+			SimpleNamespace(descender=-250.0)):
+		assert preview_module.capBandFor(master, 0.2) is None
+
+
+def test_a_master_with_no_cap_height_still_gets_a_band():
+	"""Given none, CAP_BAND_EM of the line stands in."""
+	emBottom = preview_module.previewEmBottom(238.0, 150.0)
+	withStandIn = preview_module.previewEmBottom(
+		238.0, 150.0, 150.0 * preview_module.CAP_BAND_EM)
+	assert emBottom == pytest.approx(withStandIn)
+
+
+def test_the_em_box_is_never_pushed_off_the_top():
+	"""The band wants the line lower; the box is only so tall.
+
+	UP TO THE TALLEST LINE THERE CAN BE. `drawPreview` caps the scale at
+	(usableHeight - KERN_LABEL_ROOM) over the em, so the figures' room is
+	always spare - a line taller than that is not a case, it is arithmetic
+	that cannot happen.
+	"""
+	foot = preview_module.PREVIEW_FOOT_ROOM
+	for usableHeight in (120.0, 190.0, 238.0, 400.0):
+		tallest = usableHeight - preview_module.KERN_LABEL_ROOM
+		for lineHeight in (tallest, tallest * 0.75, tallest * 0.4):
+			emBottom = preview_module.previewEmBottom(usableHeight, lineHeight)
+			assert emBottom + lineHeight <= foot + usableHeight + 0.01, \
+					f'{lineHeight} of {usableHeight}'
+
+
+def test_the_foot_is_a_margin_now_not_a_row_of_switches():
+	"""Everything on the preview sits along the top - the size slider and the
+	gear. What was reserved under the drawing was holding it up."""
+	assert preview_module.PREVIEW_FOOT_ROOM < preview_module.PREVIEW_TOP_ROOM
+	assert preview_module.PREVIEW_FOOT_ROOM <= 12.0
 
 
 # --- Walking a tab ----------------------------------------------------------

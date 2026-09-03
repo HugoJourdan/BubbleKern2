@@ -42,11 +42,15 @@ PREVIEW_TEXT = 'AVoTnoun'  # a diagonal, a flat pair and a round one
 # slider only shrinks. Bigger than fits means a preview with its ends cut off,
 # and the ends of a string are where the pairs someone typed it for usually are.
 PREVIEW_SIZE_RANGE = (40.0, 100.0)
-# WHAT THE CONTROLS ON THE PREVIEW TAKE UP, top and bottom, so the drawing can
-# keep out from under them. Measured from the view's own edges: it draws
-# unflipped, the switches sit along the foot and the size slider along the top.
+# WHAT THE CONTROLS ON THE PREVIEW TAKE UP, so the drawing can keep out from
+# under them. Measured from the view's own edges; it draws unflipped.
+#
+# EVERYTHING IS ALONG THE TOP: the size slider and the gear. The foot once had
+# switches on it and has had none for a while, so what is left down there is a
+# margin, and 28 points of margin under a drawing that has nothing beneath it
+# is 28 points the type is held up by.
 PREVIEW_TOP_ROOM = 26.0
-PREVIEW_FOOT_ROOM = 28.0
+PREVIEW_FOOT_ROOM = 8.0
 # WHERE THE KERN FIGURES STAND. `LIFT` clears the descender, `DROP` is the
 # ten points past it they were asked to sit at, and `ROOM` is what has to be
 # kept free under the line for the two of them: 26 is the least that works,
@@ -54,27 +58,57 @@ PREVIEW_FOOT_ROOM = 28.0
 KERN_LABEL_LIFT = 14.0
 KERN_LABEL_DROP = 10.0
 KERN_LABEL_ROOM = 26.0
+# WHERE THE MIDDLE OF A LINE ACTUALLY LOOKS TO BE, as a fraction of the em
+# measured up from the descender: 700 of cap height on 750/-250 metrics puts
+# it at (250 + 350) / 1000. Stands in when a master says no cap height.
+CAP_BAND_EM = 0.6
 
 
-def previewEmBottom(usableHeight, lineHeight):
+def previewEmBottom(usableHeight, lineHeight, capBand=None):
 	"""Where the line's descender sits in the preview box. -> y
 
-	THE FIGURES' ROOM GOES UNDER THE LINE, so it is ADDED here, not subtracted.
-	See CLAUDE.md.
+	THE FIGURES' ROOM GOES UNDER THE LINE. See CLAUDE.md.
 
-	CENTRED BY EYE, NOT BY MEASURE. Centring the line together with the room
-	reserved under it puts the block in the middle to the point, and reads
-	wrong: the figures are small and faint, so what the eye centres on is the
-	word, and the word sits half that room high. Take the half back - which
-	centres the em box itself - as far as the figures can follow.
+	CENTRED ON THE BAND THE EYE READS, not on the em box. Nearly every letter
+	in a line stands between the baseline and the cap height; the ascender
+	above it and the descender below are reached by a few, and empty space does
+	not read as part of a word. So centring the em box leaves the word looking
+	high by half the difference - a tenth of the em, on ordinary metrics - and
+	centring the em box together with the figures' room under it leaves it
+	higher still. Both were tried; this is the third answer and the one that
+	says what it is doing.
+
+	`capBand` is how far the middle of that band stands above the bottom of the
+	em box, in the same points as `lineHeight`. Given none, CAP_BAND_EM of the
+	line stands in.
 	"""
-	emBottom = PREVIEW_FOOT_ROOM + (usableHeight - lineHeight + KERN_LABEL_ROOM) / 2.0
-	dropped = emBottom - KERN_LABEL_ROOM / 2.0
-	# AS FAR AS THE FIGURES CAN FOLLOW: they hang this far under the line, and
-	# under the foot is the switches. When the line is too tall for even that,
-	# stay where the measured centring put it rather than climbing back up.
+	if capBand is None:
+		capBand = lineHeight * CAP_BAND_EM
+	emBottom = PREVIEW_FOOT_ROOM + usableHeight / 2.0 - capBand
+	# THE FIGURES HANG THIS FAR UNDER THE LINE and the foot of the box is as
+	# far as they go; the em box may not run off the top either. A line too
+	# tall to satisfy both keeps its figures, and the clip takes the rest.
 	floor = PREVIEW_FOOT_ROOM + KERN_LABEL_LIFT + KERN_LABEL_DROP
-	return dropped if dropped >= floor else min(emBottom, floor)
+	ceiling = PREVIEW_FOOT_ROOM + usableHeight - lineHeight
+	if ceiling < floor:
+		return floor
+	return min(max(emBottom, floor), ceiling)
+
+
+def capBandFor(master, scale):
+	"""Where the middle of the band the eye reads is, for this master. -> y
+
+	Measured up from the bottom of the em box, in drawn points, so it can go
+	straight to `previewEmBottom`. None when the master has no cap height to
+	go on, which is what CAP_BAND_EM stands in for.
+	"""
+	try:
+		capHeight = float(getattr(master, 'capHeight', 0) or 0)
+		if capHeight <= 0:
+			return None
+		return (-float(master.descender) + capHeight / 2.0) * scale
+	except Exception:
+		return None
 
 
 def kernLabelY(emBottom):
@@ -288,7 +322,10 @@ def drawPreview(bounds):
 	# hanging off to one side with the difference banked up on the other.
 	drawn = line['width'] if line['width'] > 0 else plain
 	originX = padding + (usableWidth - drawn * scale) / 2.0
-	emBottom = previewEmBottom(usableHeight, (top - bottom) * scale)
+	# THE MASTER'S OWN CAP HEIGHT where it has one, so the centring follows the
+	# file rather than an assumption about it.
+	emBottom = previewEmBottom(usableHeight, (top - bottom) * scale,
+			capBandFor(master, scale))
 	# CLIPPED ALL THE SAME. The line fits, but a glyph is not obliged to stay
 	# inside the ascender and descender the box was measured from, and one that
 	# does not would draw over the switches at the foot.
