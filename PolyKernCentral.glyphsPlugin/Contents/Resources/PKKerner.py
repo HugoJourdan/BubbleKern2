@@ -108,13 +108,14 @@ class PolyKernKerner(GeneralPlugin):
 		submenu.addItem_(NSMenuItem.separatorItem())
 
 		generate = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-			'Generate Auto Bubbles for Selected Glyphs', self.generateSelected_, '')
+			'Generate PolyKern Fingerprints for Selected Glyphs',
+			self.generateSelected_, '')
 		generate.setTarget_(self)
 		submenu.addItem_(generate)
 		# THE OPTION VARIANT. An alternate takes the place of the item above it
 		# while its modifier is held: same key equivalent, different mask.
 		everyMaster = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-			'Generate Auto Bubbles for Selected Glyphs for all Masters',
+			'Generate PolyKern Fingerprints for Selected Glyphs in all Masters',
 			self.generateAllMasters_, '')
 		everyMaster.setTarget_(self)
 		everyMaster.setKeyEquivalentModifierMask_(NSEventModifierFlagOption)

@@ -1,7 +1,7 @@
 # encoding: utf-8
 """Which settings a generate run measures each layer against.
 
-`autoGenerate` is what the Edit menu's 'Generate Auto Bubbles for Selected
+`autoGenerate` is what the Edit menu's 'Generate PolyKern Fingerprints for Selected
 Glyphs' calls, and its Option variant hands in the layers of EVERY master at
 once. `stored_settings` reads a master's own PolyKern parameter over the
 font's, so a run that resolved the settings once - against whichever master
