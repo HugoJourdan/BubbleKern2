@@ -1837,7 +1837,7 @@ class PolyKernTool(SelectTool):
 					contextMenu.insertItem_atIndex_(entry, where)
 					where += 1
 			item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
-				'PolyKern Settings…', 'openSettings:', '')
+				'PolyKern Parameters…', 'openSettings:', '')
 			item.setTarget_(self)
 			contextMenu.insertItem_atIndex_(item, where)
 		except Exception:
@@ -2434,7 +2434,7 @@ class PolyKernTool(SelectTool):
 		try:
 			# FLOATING: THE POINT OF THIS WINDOW IS TO TURN A KNOB AND LOOK AT THE
 			# CANVAS, WHICH IS NOT SOMETHING A WINDOW THAT HIDES BEHIND IT CAN DO.
-			self.setW = vanilla.FloatingWindow(self.SETTINGS_SIZE, 'PolyKern Settings')
+			self.setW = vanilla.FloatingWindow(self.SETTINGS_SIZE, 'PolyKern Parameters')
 			w = self.setW
 			# LANDSCAPE, IN TWO COLUMNS, with a rule down the middle: the wall
 			# settings above it, and below, what the kerner does with the walls
@@ -2554,7 +2554,7 @@ class PolyKernTool(SelectTool):
 		"""What a bubble is shaped like: the three sliders and the grid."""
 		below = self.settingsBelow()
 		w.line0 = vanilla.HorizontalLine((15, below, -15, 1))
-		w.shapeTitle = vanilla.TextBox((15, below + 10, 170, 16), 'PolyKern Settings')
+		w.shapeTitle = vanilla.TextBox((15, below + 10, 170, 16), 'PolyKern Parameters')
 		# UNDER A GEAR, the way a macOS options menu is spelled. Everything
 		# here is font-wide and done once a session - grouping the font,
 		# fitting the settings to the kerning already in it, and putting

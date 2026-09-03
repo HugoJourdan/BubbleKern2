@@ -15,9 +15,9 @@ from GlyphsApp import Glyphs, GSControlLayer, GSLayer
 import PKAutoBubble as auto
 import PKPreview as preview
 from PKSide import CONCEPTS, LEFT, RIGHT, SIDES, of
-from PKCommonLogic import (getFinalBubble, getKernValue, isBlankWall,
-	isMirrored, isReferenceValid, log, mergeableComposite, recordBox,
-	tempToUserNodeX)
+from PKCommonLogic import (bubbleGroups, getFinalBubble, getKernValue,
+	isBlankWall, isMirrored, isReferenceValid, log, mergeableComposite,
+	recordBox, tempToUserNodeX)
 
 # font.userData: EVERY PAIR THE PREVIEW WROTE, SO IT CAN ALWAYS BE TAKEN BACK
 PreviewKerningKey = 'PolyKernPreviewKerning'
@@ -388,6 +388,41 @@ def planGroups(plan, sides):
 					'members': [representative] + sorted(names)})
 	groups.sort(key=lambda group: (-len(group['members']), group['name']))
 	return groups
+
+
+def referGroups(font, masterId, sides=SIDES):
+	"""The groups this font's Refer glyphs make as it stands, biggest first.
+
+	planGroups says what one run of Set Refer Glyphs Automatically decided,
+	and only that run. This says what the font says now - whoever wrote the
+	references and whenever - which is what somebody is asking about when they
+	want to see whether glyphs really do share a fingerprint.
+
+	NOTHING BUT REFERENCES GETS IN. `bubbleGroups` enters a glyph only when it
+	points somewhere, and enters the glyph it points at beside it, so a glyph
+	that neither borrows nor lends never appears - which is right, there being
+	nothing to compare in a band of one cell.
+
+	-> [{'side': side, 'name': representative, 'members': [names]}]
+	"""
+	try:
+		right, left = bubbleGroups(font, masterId)
+		tables = {RIGHT: right, LEFT: left}
+		groups = []
+		for side in sides:
+			members = {}
+			for name, representative in tables[side].items():
+				members.setdefault(representative, set()).add(name)
+			for representative, names in members.items():
+				# THE REPRESENTATIVE COMES FIRST, as in planGroups: it is the
+				# one carrying the drawing the rest of them point at.
+				groups.append({'side': side, 'name': representative,
+						'members': [representative] + sorted(names - {representative})})
+		groups.sort(key=lambda group: (-len(group['members']), group['name']))
+		return groups
+	except Exception:
+		log(f'referGroups error: {traceback.format_exc()}', error=True)
+		return []
 
 
 def writePlan(font, master, plan, sides, overwrite):

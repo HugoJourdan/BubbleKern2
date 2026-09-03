@@ -25,12 +25,15 @@ from AppKit import (
 	NSAttributedString,  # to measure a paragraph before giving it a box
 	NSFontAttributeName,
 	NSStringDrawingUsesLineFragmentOrigin,
+	NSViewWidthSizable,  # to keep the group grid as wide as it is scrolled in
 )
-from Foundation import NSMakeSize
+from Foundation import NSMakeRect, NSMakeSize
 
 import PKAutoBubble
+import PKBubbleStore as store
 import PKCommonLogic
 import PKExport
+from PKGroupGrid import PKGroupGridView
 
 totalPairsPrefix = 'Total Pairs to Kern : '
 
@@ -333,22 +336,25 @@ class PolyKernKerner(GeneralPlugin):
 		except Exception:
 			PKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
 
-	# THE TWO PANES OF THE ONE WINDOW, and what the toolbar calls them.
-	KERNER, SETTINGS = 'kerner', 'settings'
+	# THE PANES OF THE ONE WINDOW, and what the toolbar calls them.
+	KERNER, GROUPS, EXPORT, SETTINGS = 'kerner', 'groups', 'export', 'settings'
 	WINDOW_SIZE = (840, 500)
 	settingsTool = None  # a class default; see the note on _relevantRows
+	groupGrid = None
 
 	@objc.python_method
 	def buildWindow(self):
 		self.font = Glyphs.font  # allows the plugin to stick to the initially given font
-		# ONE WINDOW FOR BOTH, PICKED FROM THE TOOLBAR. The kerner and the
+		# ONE WINDOW FOR ALL OF IT, PICKED FROM THE TOOLBAR. The kerner and the
 		# settings were two floating windows over the same canvas, and neither
 		# is any use without the other: the settings decide what a wall looks
-		# like and the kerner decides what to do with it.
+		# like and the kerner decides what to do with it. The font export was
+		# a tab inside the kerner, which made it look like a step of kerning
+		# rather than the separate, experimental thing it is.
 		#
-		# ONE SIZE FOR BOTH PANES, deliberately. The settings only fill 700x398
-		# of it, so there is air at the right and the bottom - the alternative
-		# is the window jumping size every time the toolbar is clicked.
+		# ONE SIZE FOR EVERY PANE, deliberately: the alternative is a window
+		# that jumps size every time the toolbar is clicked. The kerner and
+		# the settings both fill it; the export pane centres itself in it.
 		self.w = vanilla.Window(
 			self.WINDOW_SIZE,
 			minSize=(700, 420),
@@ -366,38 +372,42 @@ class PolyKernKerner(GeneralPlugin):
 		# window, and a container placed by rules cannot hold one placed by
 		# posSize. Each pane lays its own contents out however it likes.
 		self.w.kernerPane = vanilla.Group((0, 0, 0, 0))
+		self.w.groupsPane = vanilla.Group((0, 0, 0, 0))
+		self.w.exportPane = vanilla.Group((0, 0, 0, 0))
 		self.w.settingsPane = vanilla.Group((0, 0, 0, 0))
 
-		# NO "REMOVE POLYKERN DATA" TAB. Clearing lives in Edit > PolyKern now,
-		# where it works on a selection rather than on the whole font at once.
-		self.w.kernerPane.tabs = vanilla.Tabs('auto', ["Generate Kerning", "Generate Bubbled Fonts"])
-
-		self.buildKerningTab()
-		self.buildFontTab()
-
-		# LAYOUT WINDOW
-		rules = [
-			'H:|[tabs(>=100)]|',
-			'V:|-[tabs]|',
-		]
-		self.w.kernerPane.addAutoPosSizeRules(rules, None)
-
+		# NO TAB VIEW ANY MORE. It carried "Generate Kerning" and "Generate
+		# Bubbled Fonts", and once the toolbar existed the window had two ways
+		# of asking the same question - a tab bar nested inside a pane picker.
+		# Each of the two is a pane of its own now, and the tabs are gone.
+		self.buildKerningPane()
+		self.buildGroupsPane()
+		self.buildExportPane()
 		self.buildSettingsPane()
 		self.addPaneToolbar()
 		self.showPane(self.KERNER)
 
 	@objc.python_method
 	def addPaneToolbar(self):
-		"""Kerner and Settings, as the two entries of a preferences toolbar."""
+		"""Kerner, Export and Settings, as the entries of a preferences toolbar."""
 		try:
 			def symbol(name):
 				return NSImage.imageWithSystemSymbolName_accessibilityDescription_(
 					name, None)
 			items = [
 				dict(itemIdentifier=self.KERNER, label='Kerner',
-					toolTip='Generate kerning, and bubbled fonts',
+					toolTip='Which pairs to kern, and kerning them',
 					imageObject=symbol('text.justify.left'), imageTemplate=True,
 					selectable=True, callback=self.pickKerner),
+				dict(itemIdentifier=self.GROUPS, label='Groups',
+					toolTip='Which glyphs share a wall, and what they share',
+					imageObject=symbol('square.grid.3x3'), imageTemplate=True,
+					selectable=True, callback=self.pickGroups),
+				dict(itemIdentifier=self.EXPORT, label='Export',
+					toolTip='Generate a font with the walls baked into it as '
+						'a BBLH table',
+					imageObject=symbol('square.and.arrow.up'), imageTemplate=True,
+					selectable=True, callback=self.pickExport),
 				dict(itemIdentifier=self.SETTINGS, label='Settings',
 					toolTip='What a wall is shaped like, and what the kerner '
 						'does with it',
@@ -409,27 +419,133 @@ class PolyKernKerner(GeneralPlugin):
 		except Exception:
 			log(f'addPaneToolbar error: {traceback.format_exc()}', error=True)
 
-	# TWO CALLBACKS, NOT ONE THAT READS THE SENDER. What vanilla hands a
-	# toolbar callback is not worth guessing at from two lines away.
+	# ONE CALLBACK PER PANE, NOT ONE THAT READS THE SENDER. What vanilla hands
+	# a toolbar callback is not worth guessing at from two lines away.
 	@objc.python_method
 	def pickKerner(self, sender=None):
 		self.showPane(self.KERNER)
+
+	@objc.python_method
+	def pickGroups(self, sender=None):
+		self.showPane(self.GROUPS)
+
+	@objc.python_method
+	def pickExport(self, sender=None):
+		self.showPane(self.EXPORT)
 
 	@objc.python_method
 	def pickSettings(self, sender=None):
 		self.showPane(self.SETTINGS)
 
 	@objc.python_method
+	def paneGroups(self):
+		"""-> {identifier: the Group that is that pane}"""
+		return {self.KERNER: self.w.kernerPane, self.GROUPS: self.w.groupsPane,
+			self.EXPORT: self.w.exportPane, self.SETTINGS: self.w.settingsPane}
+
+	@objc.python_method
 	def showPane(self, which):
-		"""Show one pane and hide the other, toolbar in step."""
+		"""Show one pane and hide the rest, toolbar in step."""
 		try:
-			self.w.kernerPane.show(which == self.KERNER)
-			self.w.settingsPane.show(which == self.SETTINGS)
+			# READ AGAIN ON EVERY VISIT, not once when the window is built. The
+			# references this draws are written by the tool, by Set Refer
+			# Glyphs Automatically and by hand, all of it while this window is
+			# open beside the canvas.
+			if which == self.GROUPS:
+				self.refreshGroups()
+			for identifier, pane in self.paneGroups().items():
+				pane.show(identifier == which)
 			toolbar = self.w.getNSWindow().toolbar()
 			if toolbar is not None:
 				toolbar.setSelectedItemIdentifier_(which)
 		except Exception:
 			log(f'showPane error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def buildGroupsPane(self):
+		"""Every glyph that borrows a wall, beside the one it borrows it from.
+
+		A REFERENCE IS THE ONLY PLACE TWO GLYPHS REALLY DO SHARE A FINGERPRINT.
+		Two walls that came out the same shape are still two walls, and drift
+		apart the moment either glyph is touched; a Refer glyph is one wall
+		read from two places. So this is a picture of the references, not of
+		what happens to look alike.
+
+		THE GRID IS THE ONE Set Refer Glyphs Automatically SHOWS. It draws each
+		glyph with its measured wall on the side it was grouped on, which is
+		the whole point: a list of names cannot say whether a grouping is any
+		good, and the glyphs side by side say it at a glance.
+		"""
+		try:
+			pane = self.w.groupsPane
+			pane.caption = vanilla.TextBox((15, 12, -15, 32), '', sizeStyle='small')
+			# THE WIDTH IS A PLACEHOLDER. The scroll view sets its document
+			# view's width, and the grid lays itself out again when it does.
+			grid = PKGroupGridView.alloc().initWithFrame_(NSMakeRect(0, 0, 800, 1))
+			grid.setAutoresizingMask_(NSViewWidthSizable)
+			self.groupGrid = grid
+			pane.groups = vanilla.ScrollView((0, 52, 0, 0), grid,
+				hasHorizontalScroller=False)
+		except Exception:
+			log(f'buildGroupsPane error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def groupsCaption(self, groups) -> str:
+		"""What the grid below adds up to, in words. -> str"""
+		if not groups:
+			return ('No glyph borrows a wall from another one in this master. '
+				'Put a glyph name in a side\u2019s Refer field, or run Set Refer '
+				'Glyphs Automatically, and the groups appear here.')
+		# ACROSS BOTH SIDES: a glyph can be in a left group and a right one,
+		# and it is still one glyph.
+		glyphs = len({name for group in groups for name in group['members']})
+		return (f'{len(groups)} group{"" if len(groups) == 1 else "s"}, '
+			f'{glyphs} glyph{"" if glyphs == 1 else "s"}. Each band is one wall '
+			'shared by everything in it, and the first cell is the glyph the '
+			'rest of them borrow it from.')
+
+	@objc.python_method
+	def fitGroupGrid(self):
+		"""Make the grid as wide as the scroll view showing it. -> None
+
+		A SCROLL VIEW DOES NOT SIZE ITS DOCUMENT VIEW - it scrolls whatever it
+		is given, at whatever size that is. The autoresizing mask keeps the two
+		in step as the window is dragged, but a mask only ever acts on a LATER
+		resize: the grid is made at a placeholder width, and without this it
+		would sit at that width with a strip of nothing beside it until
+		somebody happened to resize the window. Same trap as the preview view.
+		"""
+		try:
+			grid = self.groupGrid
+			if grid is None:
+				return
+			width = float(self.w.groupsPane.groups.getNSScrollView()
+					.contentView().bounds().size.width)
+			if width > 1:
+				grid.relayout(width)
+		except Exception:
+			log(f'fitGroupGrid error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def refreshGroups(self):
+		"""Read the font's references again and redraw the grid."""
+		try:
+			grid = self.groupGrid
+			if grid is None:
+				return
+			self.fitGroupGrid()
+			font = Glyphs.font or self.font
+			master = font.selectedFontMaster if font is not None else None
+			if font is None or master is None:
+				grid.setGroups([], font, None)
+				self.w.groupsPane.caption.set('Open a font to see its groups.')
+			else:
+				groups = store.referGroups(font, master.id)
+				grid.setGroups(groups, font, master.id)
+				self.w.groupsPane.caption.set(self.groupsCaption(groups))
+			grid.setNeedsDisplay_(True)
+		except Exception:
+			log(f'refreshGroups error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def buildSettingsPane(self):
@@ -470,15 +586,14 @@ class PolyKernKerner(GeneralPlugin):
 			return False
 
 	@objc.python_method
-	def buildKerningTab(self):
+	def buildKerningPane(self):
 		"""The presets table and what a run does with it."""
-		# GENERATE KERNING TAB
-		tab0 = self.w.kernerPane.tabs[0]  # STANDARD KERNIG GENERATION
-		tab0.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
-		tab0.group1 = vanilla.Group('auto')  # BUTTONS
+		pane = self.w.kernerPane  # STANDARD KERNING GENERATION
+		pane.group0 = vanilla.Group('auto')  # TABLES TO MAKE AUTO LAYOUT EASIER
+		pane.group1 = vanilla.Group('auto')  # BUTTONS
 
-		tab0.group0.optionsPopup = vanilla.PopUpButton('auto', popupOptions, callback=self.popupTasks)  # POPUP MENU
-		tab0.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
+		pane.group0.optionsPopup = vanilla.PopUpButton('auto', popupOptions, callback=self.popupTasks)  # POPUP MENU
+		pane.group0.optionsPopup._nsObject.menu().setAutoenablesItems_(False) # what does it do?
 
 		emptyPermutation = [{"Kern": True, "Left": "A B C", "Right": "X Y Z", "Add Flipped": True, "Pairs": "0"}]  # TITLE
 
@@ -495,7 +610,7 @@ class PolyKernKerner(GeneralPlugin):
 			performDropCallback=self.performDropCallback
 		)
 
-		tab0.group0.permList = vanilla.List2(
+		pane.group0.permList = vanilla.List2(
 			'auto',
 			items=emptyPermutation,
 			columnDescriptions=[
@@ -526,7 +641,7 @@ class PolyKernKerner(GeneralPlugin):
 			doubleClickCallback=self.permListDoubleClick,
 		)
 
-		tableView = tab0.group0.permList._tableView
+		tableView = pane.group0.permList._tableView
 		tableView.setAllowsColumnReordering_(False)
 		tableView.unbind_("sortDescriptors")  # Disables sorting by clicking the title bar
 		# INDEXED, SO THE Kern COLUMN SHIFTED THEM ALL ALONG ONE. Only Left and
@@ -542,13 +657,13 @@ class PolyKernKerner(GeneralPlugin):
 		# For detail,see: http://api.monobjc.net/html/T_Monobjc_AppKit_NSTableViewColumnAutoresizingStyle.htm
 
 
-		tab0.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
-		tab0.group0.preview._textView.setFont_(Menlo12)
+		pane.group0.preview = vanilla.TextEditor('auto', "", readOnly=True)
+		pane.group0.preview._textView.setFont_(Menlo12)
 		# ADD & DELETE BUTTONS:
 		plusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("plus", None)
-		tab0.group0.addButton = vanilla.ImageButton('auto', imageObject=plusImage, callback=self.addButton)
+		pane.group0.addButton = vanilla.ImageButton('auto', imageObject=plusImage, callback=self.addButton)
 		minusImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_("trash", None)
-		tab0.group0.delButton = vanilla.ImageButton('auto', imageObject=minusImage, callback=self.delButton)
+		pane.group0.delButton = vanilla.ImageButton('auto', imageObject=minusImage, callback=self.delButton)
 
 		# THE ADD AND DELETE BUTTONS ARE NOT IN HERE. They are pinned to the
 		# list's own bottom right corner below, which the visual format
@@ -560,20 +675,20 @@ class PolyKernKerner(GeneralPlugin):
 			'V:[optionsPopup]-[preview]-|',
 		]
 		metrics = {}
-		tab0.group0.addAutoPosSizeRules(rules, metrics)
-		self.pinListButtons(tab0.group0)
+		pane.group0.addAutoPosSizeRules(rules, metrics)
+		self.pinListButtons(pane.group0)
 
-		tab0.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
-		tab0.group1.progress.show(False)
+		pane.group1.progress = vanilla.ProgressBar('auto', maxValue=100)
+		pane.group1.progress.show(False)
 		# THE PAIRS THAT ACTUALLY OCCUR, ON TOP OF THE PRESET'S. The rows say
 		# which glyphs are in scope and pair them exhaustively; this list says
 		# which combinations turn up in text, whatever the rows happen to
 		# cover. Added to them, not imposed on them - a row asking for
 		# something the list has never heard of is still a row somebody wrote.
-		tab0.group1.includeRelevant = vanilla.CheckBox('auto', 'Include the most relevant pairs',
+		pane.group1.includeRelevant = vanilla.CheckBox('auto', 'Include the most relevant pairs',
 			value=bool(PKAutoBubble._pref(PKAutoBubble.PREF_INCLUDE_RELEVANT, False)),
 			callback=self.toggleIncludeRelevant, sizeStyle='small')
-		tab0.group1.includeRelevant.getNSButton().setToolTip_(
+		pane.group1.includeRelevant.getNSButton().setToolTip_(
 			'Also kern the pairs that occur in running text, after André '
 			'Fuchs\u2019s kerning-pairs, whether or not the list above asks '
 			'for them')
@@ -583,16 +698,16 @@ class PolyKernKerner(GeneralPlugin):
 		# sentence; this one needs a paragraph and the 3,736 pairs themselves.
 		infoImage = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
 			"info.circle", None)
-		tab0.group1.infoButton = vanilla.ImageButton('auto', imageObject=infoImage,
+		pane.group1.infoButton = vanilla.ImageButton('auto', imageObject=infoImage,
 			bordered=False, callback=self.showRelevantPairs)
-		tab0.group1.infoButton.getNSButton().setToolTip_(
+		pane.group1.infoButton.getNSButton().setToolTip_(
 			'What the most relevant pairs are, and which ones they are')
 
-		tab0.group1.applyButton = vanilla.Button('auto', "Apply Kerning",
+		pane.group1.applyButton = vanilla.Button('auto', "Apply Kerning",
 			sizeStyle="regular", callback=self.PolyKernMain)
 		# DIRECTLY OVER THE BUTTON IT DESCRIBES. It used to sit under the list,
 		# a column away from the button that acts on it.
-		tab0.group1.total = vanilla.TextBox('auto', totalPairsPrefix,
+		pane.group1.total = vanilla.TextBox('auto', totalPairsPrefix,
 			alignment="right", sizeStyle="small")
 		# ONE CHAIN TOP TO BOTTOM, AND ONE ONLY. The bar has no height of its
 		# own beyond what its rules give it, so something must reach the bottom
@@ -609,14 +724,16 @@ class PolyKernKerner(GeneralPlugin):
 			'V:|-(30)-[infoButton(18)]',
 			'V:|-(28)-[progress]',
 		]
-		tab0.group1.addAutoPosSizeRules(rules, metrics)
+		pane.group1.addAutoPosSizeRules(rules, metrics)
 
+		# THE TOP MARGIN HAS TO BE ASKED FOR NOW. The tab view inset whatever
+		# it held; a pane sitting straight in the window insets nothing.
 		rules = [
 			'H:|[group0(>=100)]|',
 			'H:|[group1(>=100)]|',
-			'V:|[group0][group1]|',
+			'V:|-(8)-[group0][group1]|',
 		]
-		tab0.addAutoPosSizeRules(rules, None)
+		pane.addAutoPosSizeRules(rules, None)
 
 	# SMALL ENOUGH TO SIT ON THE LIST WITHOUT COVERING A ROW.
 	LIST_BUTTON_W, LIST_BUTTON_H = 26.0, 20.0
@@ -655,11 +772,10 @@ class PolyKernKerner(GeneralPlugin):
 			log(f'pinListButtons error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def buildFontTab(self):
+	def buildExportPane(self):
 		"""Exporting a font with the bubbles baked in as BBLH."""
-		# GENERATE FONT TAB
-		tab1 = self.w.kernerPane.tabs[1]
-		tab1.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
+		pane = self.w.exportPane
+		pane.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
 
 1. You can generate a new font with 'BBLH' table based on the PolyKern data.
 (Maybe also vertical 'BBLV' table in the future)
@@ -670,20 +786,26 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 3. Interpolation is currently not supported. Only the instances matching masters will be exported.
 
 4. The font format is set in the "Export..." menu.""")
-		tab1.exportButton = vanilla.Button('auto', 'Generate Bubbled Font', self.generateBubbledFont)
-		tab1.getHTMLButton = vanilla.Button('auto', 'Get HTML tester', self.getHTMLforBBLH)
-		tab1.getHTMLButton.enable(False)
-		tab1.spacer0 = vanilla.Group('auto')
-		tab1.spacer1 = vanilla.Group('auto')
-		tab1.spacer2 = vanilla.Group('auto')
-		tab1.spacer3 = vanilla.Group('auto')
+		pane.exportButton = vanilla.Button('auto', 'Generate Bubbled Font', self.generateBubbledFont)
+		pane.getHTMLButton = vanilla.Button('auto', 'Get HTML tester', self.getHTMLforBBLH)
+		pane.getHTMLButton.enable(False)
+		pane.spacer0 = vanilla.Group('auto')
+		pane.spacer1 = vanilla.Group('auto')
+		pane.spacer2 = vanilla.Group('auto')
+		pane.spacer3 = vanilla.Group('auto')
+		# THE BUTTONS ARE GIVEN A WIDTH, because without one they have no
+		# settled width at all. A button between two spacers that are only
+		# said to equal each other leaves auto layout a free choice - nothing
+		# here has an intrinsic width to prefer - and it takes it differently
+		# from run to run: the same rules measured 214 points wide in one
+		# process and 587, the whole window, in the next.
 		rules = [
 			'H:|[spacer0(==spacer1)]-[caption]-[spacer1]|',
-			'H:|[spacer0(==spacer1)]-[exportButton]-[spacer1]|',
-			'H:|[spacer0(==spacer1)]-[getHTMLButton]-[spacer1]|',
+			'H:|[spacer0]-[exportButton(200)]-[spacer1]|',
+			'H:|[spacer0]-[getHTMLButton(200)]-[spacer1]|',
 			'V:|[spacer2(==spacer3)]-[caption]-(20)-[exportButton]-[getHTMLButton]-[spacer3]|',
 		]
-		tab1.addAutoPosSizeRules(rules, None)
+		pane.addAutoPosSizeRules(rules, None)
 
 	def showWindow_(self, sender):
 		try:
@@ -759,7 +881,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			elif index == presetsDicLength + 3: # delete
 				if len(self.presetsDic) <= 1: # only one or zero preset to delete
 					PKCommonLogic.show_alert("You can't delete the last preset.", cancel=False)
-					self.w.kernerPane.tabs[0].group0.optionsPopup.set(0)
+					self.w.kernerPane.group0.optionsPopup.set(0)
 				else:
 					deleting = PKCommonLogic.show_alert(f'Are you sure you want to delete "{self.loadedPresetName}"?')
 					if deleting:
@@ -775,7 +897,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	def refreshPopupButton(self):  # refresh option popup items
 		try:
 			presetsDicNames = sorted([k for k in self.presetsDic.keys()])
-			thePopup = self.w.kernerPane.tabs[0].group0.optionsPopup
+			thePopup = self.w.kernerPane.group0.optionsPopup
 
 			thePopup.setItems(presetsDicNames + popupOptions)
 
@@ -837,9 +959,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				pass
 
 			# which dic to set
-			if sender == self.w.kernerPane.tabs[0].group0.optionsPopup:
+			if sender == self.w.kernerPane.group0.optionsPopup:
 				log('Popup is loading')
-			elif sender == self.w.kernerPane.tabs[0].group0.permList:  # the permList has been edited
+			elif sender == self.w.kernerPane.group0.permList:  # the permList has been edited
 				log('List view is loading')
 			else: # on first load; load the first item?
 				if not self.loadedPresetName:
@@ -857,7 +979,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 					pairsCount = self.pairsCount(perm[0], perm[1], perm[2])
 					dictToSet['Pairs'] = pairsCount
 					permutations.append(dictToSet)
-				self.w.kernerPane.tabs[0].group0.permList.set(permutations)
+				self.w.kernerPane.group0.permList.set(permutations)
 
 				self.refreshPopupButton()  # load popup
 
@@ -877,7 +999,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			elif option == 2: # making new list
 				self.presetsDic[self.loadedPresetName] = [('A B C', 'X Y Z', True, True)]
 			else: # saving
-				permList = self.w.kernerPane.tabs[0].group0.permList.get()
+				permList = self.w.kernerPane.group0.permList.get()
 				perms = []
 				for item in permList: # for each line
 					perm = []
@@ -900,7 +1022,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def refreshPreview(self): # preview EditText
 		try:
-			permList = self.w.kernerPane.tabs[0].group0.permList
+			permList = self.w.kernerPane.group0.permList
 			index = permList.getSelectedIndexes()[0]
 			lefts = permList.get()[index]['Left'].split(' ')
 			rights = permList.get()[index]['Right'].split(' ')
@@ -925,7 +1047,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 						break
 			if count <= 0:
 				lines += '(...)'
-			self.w.kernerPane.tabs[0].group0.preview.set(lines)
+			self.w.kernerPane.group0.preview.set(lines)
 		except Exception:
 			log(f'refreshPreview error: {traceback.format_exc()}', error=True)
 
@@ -1056,9 +1178,9 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def refreshTotal(self): # preview EditText
 		try:
-			permutations = self.w.kernerPane.tabs[0].group0.permList.get()
+			permutations = self.w.kernerPane.group0.permList.get()
 			totalPairs = self.totalCount(permutations)
-			self.w.kernerPane.tabs[0].group1.total.set(totalPairsPrefix + format(totalPairs, ','))
+			self.w.kernerPane.group1.total.set(totalPairsPrefix + format(totalPairs, ','))
 		except Exception:
 			log(f'refreshTotal error: {traceback.format_exc()}', error=True)
 
@@ -1073,7 +1195,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 	@objc.python_method
 	def permListSelected(self, sender):  # when permutation list line has been selected
-		groupView = self.w.kernerPane.tabs[0].group0.getNSView()
+		groupView = self.w.kernerPane.group0.getNSView()
 		if len(groupView.subviews()) <= 1:
 			# I want to avoid sender being not ready on the first run
 			# 1 means only Popup has been loaded, and the list is not ready yet
@@ -1157,7 +1279,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			if not newText1 or not newText2:
 				pass
 			else:
-				permListUI = self.w.kernerPane.tabs[0].group0.permList
+				permListUI = self.w.kernerPane.group0.permList
 				i = permListUI.getSelectedIndexes()[0]
 				content = permListUI.get()
 				content[i]["Left"] = newText1
@@ -1177,7 +1299,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def makeDragDataCallback(self, index):
 		try:
-			permList = self.w.kernerPane.tabs[0].group0.permList
+			permList = self.w.kernerPane.group0.permList
 
 			indexes = [index]
 
@@ -1196,7 +1318,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def dropCandidateCallback(self, info):
 		source = info["source"]
-		if source == self.w.kernerPane.tabs[0].group0.permList:
+		if source == self.w.kernerPane.group0.permList:
 			return "move"
 		return "copy"
 
@@ -1208,7 +1330,7 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			endIndex = info["index"] # proposed drop index
 			items = info["items"]
 
-			permList = self.w.kernerPane.tabs[0].group0.permList
+			permList = self.w.kernerPane.group0.permList
 
 			# reorder
 			if source == permList:
@@ -1233,32 +1355,32 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 	@objc.python_method
 	def addButton(self, sender):  # add a permutation
 		try:
-			permList = self.w.kernerPane.tabs[0].group0.permList
+			permList = self.w.kernerPane.group0.permList
 			listToSet = permList.get()
 			listToSet += [{'Kern': True, 'Left': 'A B C', 'Right': 'X Y Z', 'Add Flipped': True, "Pairs": "0"}]
 			permList.set(listToSet)
 
 			# enable delButton if there's multiple: maybe move elsewhere
 			if len(listToSet) > 1:
-				self.w.kernerPane.tabs[0].group0.delButton.enable(True)
+				self.w.kernerPane.group0.delButton.enable(True)
 		except Exception:
 			log(f'addButton error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def delButton(self, sender):  # remove a selected permutation
 		try:
-			permList = self.w.kernerPane.tabs[0].group0.permList
+			permList = self.w.kernerPane.group0.permList
 			index = permList.getSelectedIndexes()[0]
-			listToSet = self.w.kernerPane.tabs[0].group0.permList.get()
+			listToSet = self.w.kernerPane.group0.permList.get()
 			try: # try because nothing may be selected
 				del listToSet[index]
-				self.w.kernerPane.tabs[0].group0.permList.set(listToSet)
+				self.w.kernerPane.group0.permList.set(listToSet)
 			except Exception:
 				pass
 
 			# disable delButton if there's only one item: maybe move elsewhere
 			if len(listToSet) == 1:
-				self.w.kernerPane.tabs[0].group0.delButton.enable(False)
+				self.w.kernerPane.group0.delButton.enable(False)
 		except Exception:
 			log(f'delButton error: {traceback.format_exc()}', error=True)
 
@@ -1267,15 +1389,15 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 		try:
 			self.font.disableUpdateInterface()
 
-			self.w.kernerPane.tabs[0].group1.progress.set(0)
-			self.w.kernerPane.tabs[0].group1.progress.show(True)
+			self.w.kernerPane.group1.progress.set(0)
+			self.w.kernerPane.group1.progress.show(True)
 
 			for progress in PKCommonLogic.kernOpenType(presetName=self.loadedPresetName):
 
-				self.w.kernerPane.tabs[0].group1.progress.set(progress)
+				self.w.kernerPane.group1.progress.set(progress)
 
 			time.sleep(.5)
-			self.w.kernerPane.tabs[0].group1.progress.show(False)
+			self.w.kernerPane.group1.progress.show(False)
 
 			self.font.enableUpdateInterface()
 		except Exception:

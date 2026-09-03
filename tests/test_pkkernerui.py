@@ -62,7 +62,7 @@ def window(monkeypatch):
 	plugin.presetsDic = dict(preset)
 	plugin.buildWindow()
 	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
-	yield plugin, plugin.w.kernerPane.tabs[0].group0
+	yield plugin, plugin.w.kernerPane.group0
 	plugin.w.close()
 
 
@@ -118,7 +118,7 @@ def test_they_are_smaller_than_the_row_they_used_to_sit_in(window):
 def test_one_button_starts_a_run(window):
 	"""Kern All Pairs and Kern Pairs for Selected Glyphs are one Apply Kerning."""
 	_, group = window
-	buttons = window[0].w.kernerPane.tabs[0].group1
+	buttons = window[0].w.kernerPane.group1
 	assert hasattr(buttons, 'applyButton')
 	assert not hasattr(buttons, 'allButton') and not hasattr(buttons, 'selButton')
 	assert buttons.applyButton.getTitle() == 'Apply Kerning'
@@ -127,7 +127,7 @@ def test_one_button_starts_a_run(window):
 def test_there_is_no_write_groups_switch_any_more(window):
 	"""It is not optional now - PKCommonLogic sets useGroups True outright."""
 	_, group = window
-	assert not hasattr(window[0].w.kernerPane.tabs[0].group1, 'writeGroups')
+	assert not hasattr(window[0].w.kernerPane.group1, 'writeGroups')
 	source = (RESOURCES / 'PKCommonLogic.py').read_text()
 	assert 'useGroups = True' in source
 
@@ -139,7 +139,7 @@ def test_the_total_counts_only_the_ticked_rows(window):
 		{'Kern': False, 'Left': 'T V W', 'Right': 'a e o', 'Add Flipped': False, 'Pairs': '9'},
 	])
 	plugin.refreshTotal()
-	total = plugin.w.kernerPane.tabs[0].group1.total
+	total = plugin.w.kernerPane.group1.total
 	assert total.get().endswith('4'), total.get()
 
 
@@ -148,7 +148,7 @@ def test_the_total_counts_only_the_ticked_rows(window):
 
 def test_the_total_says_what_it_counts(window):
 	plugin, _ = window
-	assert plugin.w.kernerPane.tabs[0].group1.total.get().startswith('Total Pairs to Kern')
+	assert plugin.w.kernerPane.group1.total.get().startswith('Total Pairs to Kern')
 
 
 def _visible(view):
@@ -165,7 +165,7 @@ def test_the_total_sits_over_the_apply_button(window):
 	"""It used to be under the list, a column away from the button that acts
 	on it. Both are in the bottom bar now, right-aligned together."""
 	plugin, _ = window
-	bar = plugin.w.kernerPane.tabs[0].group1
+	bar = plugin.w.kernerPane.group1
 	total = _visible(bar.total.getNSTextField())
 	button = _visible(bar.applyButton.getNSButton())
 	# the bar is not flipped, so higher on screen is a larger y
@@ -176,7 +176,7 @@ def test_the_total_sits_over_the_apply_button(window):
 
 def test_the_total_and_the_button_are_not_touching(window):
 	plugin, _ = window
-	bar = plugin.w.kernerPane.tabs[0].group1
+	bar = plugin.w.kernerPane.group1
 	total = _visible(bar.total.getNSTextField())
 	button = _visible(bar.applyButton.getNSButton())
 	gap = total.origin.y - (button.origin.y + button.size.height)
@@ -194,7 +194,7 @@ def test_the_list_is_no_longer_squeezed_by_the_total(window):
 
 def test_there_is_an_info_button_beside_the_checkbox(window):
 	plugin, _ = window
-	bar = plugin.w.kernerPane.tabs[0].group1
+	bar = plugin.w.kernerPane.group1
 	assert hasattr(bar, 'infoButton')
 	check = bar.includeRelevant.getNSButton().frame()
 	info = bar.infoButton.getNSButton().frame()
@@ -226,7 +226,7 @@ def test_the_blurb_says_the_list_adds_rather_than_narrows(window):
 def test_the_popover_opens_and_carries_the_pairs(window):
 	"""Built for real - a bad posSize or column raises here, not in Glyphs."""
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.group1.infoButton)
 	popover = getattr(plugin, 'relevantPopover', None)
 	assert popover is not None, 'the popover was not built'
 	assert len(popover.pairs.get()) == len(kerner.PKAutoBubble.relevant_pairs())
@@ -253,7 +253,7 @@ def test_the_corner_buttons_keep_clear_of_the_corner(window):
 def test_the_blurb_gets_the_room_its_words_need(window):
 	"""It was given a round 106 points, wanted 126, and lost two lines."""
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.group1.infoButton)
 	popover = plugin.relevantPopover
 	text = plugin.RELEVANT_BLURB.format(count=len(plugin.relevantRows()))
 	wide = plugin.POPOVER_SIZE[0] - plugin.POPOVER_MARGIN * 2
@@ -275,7 +275,7 @@ def test_a_longer_paragraph_would_get_a_taller_box(window):
 
 def test_the_pairs_still_fit_under_it(window):
 	plugin, _ = window
-	plugin.showRelevantPairs(plugin.w.kernerPane.tabs[0].group1.infoButton)
+	plugin.showRelevantPairs(plugin.w.kernerPane.group1.infoButton)
 	popover = plugin.relevantPopover
 	content = popover.getNSPopover().contentViewController().view().frame()
 	list_frame = popover.pairs.getNSScrollView().frame()
@@ -296,27 +296,28 @@ def test_the_window_is_one_polykern_not_a_kerner(window):
 	assert plugin.w.getNSWindow().title() == 'PolyKern'
 
 
-def test_both_panes_exist(window):
+def test_every_pane_exists(window):
 	plugin, _ = window
-	assert hasattr(plugin.w, 'kernerPane') and hasattr(plugin.w, 'settingsPane')
+	for name in ('kernerPane', 'groupsPane', 'exportPane', 'settingsPane'):
+		assert hasattr(plugin.w, name), name
 
 
-def test_the_toolbar_offers_the_two_panes(window):
+def test_the_toolbar_offers_every_pane_in_order(window):
 	plugin, _ = window
 	toolbar = plugin.w.getNSWindow().toolbar()
 	assert toolbar is not None, 'no toolbar'
 	names = [str(i.itemIdentifier()) for i in toolbar.items()]
-	assert names == [plugin.KERNER, plugin.SETTINGS], names
+	assert names == [plugin.KERNER, plugin.GROUPS, plugin.EXPORT,
+			plugin.SETTINGS], names
 
 
-def test_showing_one_pane_hides_the_other(window):
+def test_showing_one_pane_hides_the_rest(window):
 	plugin, _ = window
-	plugin.showPane(plugin.SETTINGS)
-	assert plugin.w.kernerPane.getNSView().isHidden()
-	assert not plugin.w.settingsPane.getNSView().isHidden()
-	plugin.showPane(plugin.KERNER)
-	assert not plugin.w.kernerPane.getNSView().isHidden()
-	assert plugin.w.settingsPane.getNSView().isHidden()
+	for which in (plugin.SETTINGS, plugin.EXPORT, plugin.KERNER, plugin.GROUPS):
+		plugin.showPane(which)
+		for identifier, pane in plugin.paneGroups().items():
+			hidden = pane.getNSView().isHidden()
+			assert hidden == (identifier != which), f'{identifier} showing {which}'
 
 
 def test_the_toolbar_follows_the_pane(window):
@@ -558,7 +559,7 @@ def test_the_settings_use_the_height_they_have(withTool):
 
 def test_the_title_is_not_the_old_name(withTool):
 	plugin, _ = withTool
-	assert plugin.w.settingsPane.shapeTitle.get() == 'PolyKern Settings'
+	assert plugin.w.settingsPane.shapeTitle.get() == 'PolyKern Parameters'
 
 
 def test_the_two_ways_in_place_things_identically(withTool):
@@ -570,3 +571,103 @@ def test_the_two_ways_in_place_things_identically(withTool):
 	kerner_source = (RESOURCES / 'PKKerner.py').read_text()
 	assert 'tool.buildSettings(pane)' in kerner_source
 	assert 'buildShapeSection' not in kerner_source, 'the kerner still places controls'
+
+
+# --- The export pane, out of the kerner's tabs -------------------------------
+# It was the second tab of a tab view inside the kerner pane, which put a tab
+# bar inside a pane picker and made an experimental font export look like the
+# second step of kerning. What is pinned here is that the tab view is gone and
+# that what was in it is still reachable.
+
+
+def test_the_tab_view_is_gone(window):
+	plugin, _ = window
+	assert not hasattr(plugin.w.kernerPane, 'tabs'), 'the tab view is still there'
+	assert 'vanilla.Tabs' not in (RESOURCES / 'PKKerner.py').read_text()
+
+
+def test_the_kerning_controls_are_straight_in_the_pane(window):
+	plugin, group = window
+	assert plugin.w.kernerPane.group0 is group
+	assert hasattr(plugin.w.kernerPane, 'group1')
+
+
+def test_the_export_button_moved_with_it(window):
+	plugin, _ = window
+	assert hasattr(plugin.w.exportPane, 'exportButton')
+	assert not hasattr(plugin.w.kernerPane, 'exportButton')
+	assert plugin.w.exportPane.exportButton.getTitle() == 'Generate Bubbled Font'
+
+
+def test_the_export_pane_is_laid_out(window):
+	"""Its rules were written for a tab and are used in a pane now.
+
+	THE BUTTON'S WIDTH IS NOT PINNED HERE, deliberately. Unconstrained it has
+	no settled width - see the note on the rules - and this harness happens to
+	resolve the ambiguity the flattering way every time, so an assertion about
+	it would pass whether the width was stated or not."""
+	plugin, _ = window
+	plugin.showPane(plugin.EXPORT)
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	frame = plugin.w.exportPane.exportButton.getNSButton().frame()
+	assert frame.size.width > 20 and frame.size.height > 10, frame
+
+
+def test_the_kerning_pane_keeps_a_top_margin(window):
+	"""The tab view used to inset what it held; nothing does now."""
+	plugin, group = window
+	pane = plugin.w.kernerPane.getNSView()
+	popup = group.optionsPopup.getNSPopUpButton()
+	top = pane.convertRect_fromView_(popup.frame(), popup.superview())
+	high = pane.frame().size.height - (top.origin.y + top.size.height)
+	assert high >= 6, f'only {high} points above the popup'
+
+
+# --- The groups pane ---------------------------------------------------------
+
+
+def test_the_groups_pane_holds_the_grid(window):
+	plugin, _ = window
+	assert hasattr(plugin.w.groupsPane, 'caption')
+	document = plugin.w.groupsPane.groups.getNSScrollView().documentView()
+	assert document is plugin.groupGrid
+	assert type(document).__name__ == 'PKGroupGridView'
+
+
+def test_visiting_the_groups_pane_reads_the_font_again(window, monkeypatch):
+	"""References are written while this window is open, so once at build
+	time is not enough."""
+	plugin, _ = window
+	seen = []
+	monkeypatch.setattr(plugin, 'refreshGroups', lambda: seen.append(1),
+			raising=False)
+	plugin.showPane(plugin.KERNER)
+	assert seen == []
+	plugin.showPane(plugin.GROUPS)
+	assert seen == [1]
+
+
+def test_a_font_with_no_references_says_so(window):
+	plugin, _ = window
+	master = types.SimpleNamespace(id='m1', name='Regular')
+	Glyphs.font.selectedFontMaster = master
+	plugin.showPane(plugin.GROUPS)
+	said = plugin.w.groupsPane.caption.get()
+	assert 'Refer' in said, said
+
+
+def test_with_no_font_the_pane_says_that_instead(window, monkeypatch):
+	plugin, _ = window
+	monkeypatch.setattr(Glyphs, 'font', None, raising=False)
+	monkeypatch.setattr(plugin, 'font', None, raising=False)
+	plugin.showPane(plugin.GROUPS)
+	assert plugin.w.groupsPane.caption.get() == 'Open a font to see its groups.'
+
+
+def test_the_caption_counts_a_glyph_on_both_sides_once():
+	"""A glyph can be in a left group and a right one and is still one glyph."""
+	said = kerner.PolyKernKerner.groupsCaption(None, [
+		{'name': 'o', 'members': ['o', 'c', 'e']},
+		{'name': 'n', 'members': ['n', 'o', 'c']},
+	])
+	assert said.startswith('2 groups, 4 glyphs'), said
