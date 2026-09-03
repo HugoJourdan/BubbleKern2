@@ -391,9 +391,9 @@ def planGroups(plan, sides):
 
 
 def referGroups(font, masterId, sides=SIDES):
-	"""The groups this font's Refer glyphs make as it stands, biggest first.
+	"""The groups this font's kerning keys make as it stands, biggest first.
 
-	planGroups says what one run of Set Refer Glyphs Automatically decided,
+	planGroups says what one run of Set Kerning Keys Automatically decided,
 	and only that run. This says what the font says now - whoever wrote the
 	references and whenever - which is what somebody is asking about when they
 	want to see whether glyphs really do share a fingerprint.

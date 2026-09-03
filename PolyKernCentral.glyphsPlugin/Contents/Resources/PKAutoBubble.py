@@ -1685,11 +1685,14 @@ def measurable(glyph, layer):
     return True
 
 
-def collect_sides(font, master, step, progress=None):
+def collect_sides(font, master, step, progress=None, names=None):
     """Measure one master. -> ({LEFT: {name: profile}, RIGHT: ...}, geometry)
 
     `geometry` is {name: (low_y, high_y, width)}, kept from the same pass so
     building the walls afterwards does not scan the font a second time.
+
+    `names`, when given, is the set of glyph names to measure and nothing else
+    is looked at - which is most of the time a run takes.
     """
     sides = {LEFT: {}, RIGHT: {}}
     geometry = {}
@@ -1697,6 +1700,8 @@ def collect_sides(font, master, step, progress=None):
     for index, glyph in enumerate(font.glyphs):
         if progress is not None and index % 10 == 0:
             progress(index, total)
+        if names is not None and glyph.name not in names:
+            continue
         layer = glyph.layers[master.id]
         if not measurable(glyph, layer):
             continue
@@ -1718,7 +1723,7 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
                      max_nodes=DEFAULT_MAX_NODES, grid=0,
                      tolerance_em=GROUP_TOL_EM, sides=(LEFT, RIGHT),
                      slope=WALL_SLOPE, max_inset=None, amplitude=AMPLITUDE,
-                     align=None, progress=None):
+                     align=None, progress=None, names=None):
     """Everything a font-wide run would write, decided before anything is.
 
     -> {side: {"nodes": {glyph: [(x, y)]}, "refer": {member: representative}}}
@@ -1727,6 +1732,13 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
     than the group medoid's, so its drawing is honest about its own shape;
     every member of the cluster is within tolerance of every other, which is
     what `cluster_kern_side` enforces, so any of them would serve.
+
+    `names` NARROWS THE WHOLE RUN, not just what gets written: glyphs outside
+    it are not measured, so they are not in anybody's cluster either. A run
+    over a handful of glyphs groups them among themselves, and a glyph that
+    would have matched something elsewhere in the font is drawn its own wall.
+    Anything else would be a run whose answer depended on glyphs it was told
+    not to look at.
     """
     if step is None:
         step = raster_step(font)
@@ -1736,7 +1748,7 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
         max_inset = MAX_INSET_PERCENT
     if align is None:
         align = font.upm * ALIGN_EM
-    measured, geometry = collect_sides(font, master, step, progress)
+    measured, geometry = collect_sides(font, master, step, progress, names)
     group_tolerance = font.upm * tolerance_em
     plan = {}
     for side in sides:

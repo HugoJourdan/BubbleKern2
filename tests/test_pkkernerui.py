@@ -683,7 +683,8 @@ def test_a_font_with_no_references_says_so(window):
 	Glyphs.font.selectedFontMaster = master
 	plugin.showPane(plugin.GROUPS)
 	said = plugin.w.groupsPane.caption.get()
-	assert 'Refer' in said, said
+	assert 'Kerning Key' in said, said
+	assert 'Refer' not in said, 'the old wording'
 
 
 def test_with_no_font_the_pane_says_that_instead(window, monkeypatch):
@@ -804,7 +805,7 @@ def test_the_caption_and_the_buttons_are_spaced_apart(window):
 def test_the_groups_pane_offers_the_command(window):
 	plugin, _ = window
 	button = plugin.w.groupsPane.autoButton
-	assert button.getTitle() == 'Set Refer Glyphs Automatically…'
+	assert button.getTitle() == 'Set Kerning Keys Automatically…'
 
 
 def test_the_button_is_wide_enough_for_its_own_title(window):
@@ -828,7 +829,8 @@ def test_the_caption_does_not_run_under_the_button(window):
 def test_the_settings_menu_has_let_it_go(withTool):
 	plugin, tool = withTool
 	titles = [title for title, _ in tool.actionMenuItems()]
-	assert 'Set Refer Glyphs automatically…' not in titles, titles
+	assert not [t for t in titles if t and 'Refer Glyphs' in t], titles
+	assert not [t for t in titles if t and 'Kerning Keys' in t], titles
 	assert 'Set Bubble Settings based on Kerning…' in titles, 'took the wrong one'
 
 
@@ -838,7 +840,7 @@ def test_without_a_tool_the_button_says_so_rather_than_doing_nothing(window,
 	said = []
 	monkeypatch.setattr(kerner.PKCommonLogic, 'show_alert',
 			lambda *a, **k: said.append(a), raising=False)
-	plugin.setReferGlyphs()
+	plugin.setKerningKeys()
 	assert said, 'silently did nothing'
 
 
@@ -863,3 +865,69 @@ def test_the_pane_itself_is_not_offered_as_a_parent(withTool):
 	plugin, tool = withTool
 	assert tool.setW is plugin.w.settingsPane
 	assert tool.sheetParent() is not tool.setW
+
+
+# --- Only the selected glyphs ------------------------------------------------
+# A run over the selection is a run over a smaller font: it groups the chosen
+# glyphs among themselves and does not so much as measure the rest.
+
+
+def test_the_sheet_asks_whether_to_stay_in_the_selection(withTool):
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		assert hasattr(tool.autoW, 'onlySelected')
+		assert tool.autoW.onlySelected.getTitle() == 'Selected glyphs only'
+		assert not tool.autoW.onlySelected.get(), 'the whole font by default'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_sheet_still_fits_what_it_holds(withTool):
+	"""It grew a row. Everything in it has to have come down with that."""
+	plugin, tool = withTool
+	tool.openAutoGroupWindow()
+	try:
+		height = tool.autoW.getNSWindow().contentView().frame().size.height
+		for name in ('sides', 'overwrite', 'onlySelected', 'cancel', 'apply',
+				'report'):
+			frame = getattr(tool.autoW, name)._nsObject.frame()
+			assert frame.origin.y >= -1, f'{name} above the top'
+			assert frame.origin.y + frame.size.height <= height + 1, \
+					f'{name} runs off the bottom of {height}'
+		# AND THE NEW ROW IS A ROW, not sitting on the one above it. A sheet's
+		# content view is NOT flipped, so the lower control has the smaller y.
+		over = tool.autoW.overwrite._nsObject.frame()
+		only = tool.autoW.onlySelected._nsObject.frame()
+		if tool.autoW.getNSWindow().contentView().isFlipped():
+			assert only.origin.y >= over.origin.y + over.size.height, 'overlapping'
+		else:
+			assert only.origin.y + only.size.height <= over.origin.y, 'overlapping'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_asking_for_a_selection_that_is_empty_says_so(withTool, monkeypatch):
+	"""Not "0 drawn, 0 grouped" after doing the work - and not doing it."""
+	plugin, tool = withTool
+	monkeypatch.setattr(Glyphs.font, 'selectedLayers', [], raising=False)
+	measured = []
+	monkeypatch.setattr(kerner.PKAutoBubble, 'auto_bubble_plan',
+			lambda *a, **k: measured.append(1), raising=False)
+	tool.openAutoGroupWindow()
+	try:
+		tool.autoW.onlySelected.set(True)
+		tool.applyAutoGroup(None)
+		assert tool.autoW.report.get() == 'Nothing is selected.'
+		assert measured == [], 'measured the font anyway'
+	finally:
+		tool.closeAutoGroupWindow()
+
+
+def test_the_names_a_run_may_look_at(withTool):
+	"""None and an empty set are different answers: none is the whole font,
+	empty is a selection that has nothing in it."""
+	plugin, tool = withTool
+	font = types.SimpleNamespace(selectedLayers=[])
+	assert tool.autoGroupNames(font, False) is None
+	assert tool.autoGroupNames(font, True) == set()

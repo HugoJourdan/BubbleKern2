@@ -438,8 +438,8 @@ class PolyKernTool(SelectTool):
 		self.w.group.boxR = PillGroup("auto")
 		self.w.group.boxL.getNSView().isLeftSide = True
 		self.w.group.boxR.getNSView().isLeftSide = False
-		self.w.group.glyphNameL = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
-		self.w.group.glyphNameR = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Refer to glyph')
+		self.w.group.glyphNameL = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Kerning key')
+		self.w.group.glyphNameR = CompletingEditText('auto', '', callback=self.infoBox, placeholder='Kerning key')
 		f0 = self.w.group.glyphNameL.getNSTextField()
 		f1 = self.w.group.glyphNameR.getNSTextField()
 		for field in (f0, f1):
@@ -2221,26 +2221,31 @@ class PolyKernTool(SelectTool):
 			parent = self.sheetParent()
 			if parent is None:
 				return
-			# TWO QUESTIONS WIDE: everything else is set in the window this sheet
-			# is standing on.
-			self.autoW = vanilla.Sheet((240, 130), parent)
+			# THREE QUESTIONS WIDE: everything else is set in the window this
+			# sheet is standing on.
+			self.autoW = vanilla.Sheet((260, 154), parent)
 			w = self.autoW
 			w.sidesLabel = vanilla.TextBox((15, 16, 40, 20), 'Sides', sizeStyle='small')
 			w.sides = vanilla.PopUpButton((60, 14, -15, 20), ['Both', 'Left', 'Right'])
-			# ON THE MARGIN, NOT UNDER THE POPUP. The two are separate questions
+			# ON THE MARGIN, NOT UNDER THE POPUP. These are separate questions
 			# and only one of them has a label to be indented past.
 			w.overwrite = vanilla.CheckBox((18, 44, -15, 20),
 				'Overwrite existing bubbles', sizeStyle='small')
+			# A RUN OVER THE SELECTION IS A RUN OVER A SMALLER FONT. It groups
+			# the chosen glyphs among themselves and does not so much as
+			# measure the rest, which is also most of the time a run takes.
+			w.onlySelected = vanilla.CheckBox((18, 68, -15, 20),
+				'Selected glyphs only', sizeStyle='small')
 			# THE FULL WIDTH BETWEEN THEM, so the sheet ends on one line.
-			w.cancel = vanilla.Button((15, 74, 100, 20), 'Cancel',
+			w.cancel = vanilla.Button((15, 98, 100, 20), 'Cancel',
 				callback=self.closeAutoGroupWindow)
-			w.apply = vanilla.Button((-115, 74, 100, 20), 'Apply',
+			w.apply = vanilla.Button((-115, 98, 100, 20), 'Apply',
 				callback=self.applyAutoGroup)
-			w.report = vanilla.TextBox((15, 102, -15, 20), '', sizeStyle='small')
+			w.report = vanilla.TextBox((15, 126, -15, 20), '', sizeStyle='small')
 			# NO HALOES. The default button is already saying where the return
 			# key goes, and a ring round the popup as well is the sheet shouting
 			# two answers to one question.
-			for control in (w.sides, w.overwrite, w.cancel, w.apply):
+			for control in (w.sides, w.overwrite, w.onlySelected, w.cancel, w.apply):
 				native = (control.getNSPopUpButton()
 					if hasattr(control, 'getNSPopUpButton') else control.getNSButton())
 				native.setFocusRingType_(NSFocusRingTypeNone)
@@ -2263,6 +2268,13 @@ class PolyKernTool(SelectTool):
 			if font is None:
 				return
 			w = self.autoW
+			# BEFORE ANYTHING IS MEASURED OR EVEN SETTLED. Asked for the
+			# selection with nothing selected, the honest answer is to say so,
+			# not to report "0 drawn, 0 grouped" after doing the work.
+			names = self.autoGroupNames(font, bool(w.onlySelected.get()))
+			if names is not None and not names:
+				w.report.set('Nothing is selected.')
+				return
 			master = font.selectedFontMaster
 			settings = auto.auto_settings(font, master)
 			sides = ((auto.LEFT, auto.RIGHT), (auto.LEFT,), (auto.RIGHT,))[w.sides.get()]
@@ -2277,6 +2289,7 @@ class PolyKernTool(SelectTool):
 					gap=settings['gap'], step=settings['step'],
 					tolerance=settings['tolerance'], max_nodes=settings['max_nodes'],
 					grid=grid, sides=sides, slope=settings['slope'], max_inset=settings['max_inset'], amplitude=settings['amplitude'],
+					names=names,
 				)
 				drawn, referred, kept = store.writePlan(font, master, plan, sides, overwrite)
 			finally:
@@ -2284,7 +2297,7 @@ class PolyKernTool(SelectTool):
 
 			summary = f'{drawn} drawn, {referred} grouped, {kept} left alone'
 			w.report.set(summary)
-			log(f'Set Refer Glyphs automatically: {summary}')
+			log(f'Set Kerning Keys automatically: {summary}')
 			report(summary)
 			# THE QUESTIONS GO AWAY AND THE ANSWER TAKES THEIR PLACE. One turn of
 			# the run loop between them, because a sheet cannot be put up on a
@@ -2298,6 +2311,18 @@ class PolyKernTool(SelectTool):
 			self.refreshGroupsPane()
 		except Exception:
 			log(f'applyAutoGroup error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def autoGroupNames(self, font, onlySelected):
+		"""Which glyphs a run may look at. -> set[str] | None for all of them.
+
+		None AND AN EMPTY SET ARE DIFFERENT ANSWERS: none means the whole font,
+		empty means the selection was asked for and there is nothing in it.
+		"""
+		if not onlySelected:
+			return None
+		return {layer.parent.name for layer in store.chosenLayers(font)
+			if layer.parent is not None}
 
 	@objc.python_method
 	def refreshGroupsPane(self):

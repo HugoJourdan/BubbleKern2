@@ -835,3 +835,92 @@ def test_pieces_sharing_a_height_are_not_a_handover():
 def test_one_piece_is_never_pulled_taut():
     wall = [(50.0, 0.0), (10.0, 300.0), (50.0, 600.0)]
     assert pk.taut_join(wall, [wall], keep_min=True) == wall
+
+
+# --- A run over the selection only ------------------------------------------
+# `names` narrows the whole run, not just what gets written: a glyph outside it
+# is never measured, so it is not in anybody's cluster either. What is pinned
+# here is that the filter reaches the scan at all - it is the scan that costs
+# the minutes, and a filter applied any later would save none of them.
+
+
+class _Layer:
+    def __init__(self, name, width=500):
+        self.width = width
+        self.parent = SimpleNamespace(name=name)
+
+
+class _Glyph:
+    def __init__(self, name):
+        self.name = name
+        self.layers = {"m1": _Layer(name)}
+
+
+class _NamedFont:
+    upm = 1000
+
+    def __init__(self, *names):
+        self.glyphs = [_Glyph(name) for name in names]
+
+
+def _stubMeasuring(monkeypatch):
+    """Everything collect_sides leans on, canned. -> the list it scanned."""
+    scanned = []
+    monkeypatch.setattr(pk, "measurable", lambda glyph, layer: True)
+
+    def scan(layer, step, skip_marks=True):
+        scanned.append(layer.parent.name)
+        return ([0.0] * pk.MIN_ROWS_TO_MEASURE,)
+
+    monkeypatch.setattr(pk, "scan_layer", scan)
+    monkeypatch.setattr(pk, "kern_profiles",
+                        lambda rows, width, step: {pk.LEFT: (1.0,), pk.RIGHT: (2.0,)})
+    monkeypatch.setattr(pk, "layer_span", lambda layer, master: (0.0, 700.0))
+    return scanned
+
+
+def test_collect_sides_measures_every_glyph_when_told_nothing(monkeypatch):
+    scanned = _stubMeasuring(monkeypatch)
+    font = _NamedFont("a", "b", "c")
+    sides, geometry = pk.collect_sides(font, SimpleNamespace(id="m1"), 10)
+    assert scanned == ["a", "b", "c"]
+    assert sorted(geometry) == ["a", "b", "c"]
+
+
+def test_collect_sides_does_not_even_look_at_the_rest(monkeypatch):
+    """Not measured and then dropped - not measured."""
+    scanned = _stubMeasuring(monkeypatch)
+    font = _NamedFont("a", "b", "c")
+    sides, geometry = pk.collect_sides(font, SimpleNamespace(id="m1"), 10,
+                                       names={"a", "c"})
+    assert scanned == ["a", "c"], scanned
+    assert sorted(geometry) == ["a", "c"]
+    assert sorted(sides[pk.LEFT]) == ["a", "c"]
+
+
+def test_the_plan_hands_the_names_down_to_the_scan(monkeypatch):
+    """The filter is no use to anybody if the plan keeps it to itself."""
+    seen = {}
+
+    def collect(font, master, step, progress=None, names=None):
+        seen["names"] = names
+        return {pk.LEFT: {}, pk.RIGHT: {}}, {}
+
+    monkeypatch.setattr(pk, "collect_sides", collect)
+    font = SimpleNamespace(upm=1000, glyphs=[])
+    pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10, tolerance=5,
+                        names={"a"})
+    assert seen["names"] == {"a"}
+
+
+def test_no_names_still_means_the_whole_font(monkeypatch):
+    seen = {}
+
+    def collect(font, master, step, progress=None, names=None):
+        seen["names"] = names
+        return {pk.LEFT: {}, pk.RIGHT: {}}, {}
+
+    monkeypatch.setattr(pk, "collect_sides", collect)
+    font = SimpleNamespace(upm=1000, glyphs=[])
+    pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10, tolerance=5)
+    assert seen["names"] is None

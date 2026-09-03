@@ -1,5 +1,5 @@
 # encoding: utf-8
-"""The grid of glyphs that Set Refer Glyphs Automatically found.
+"""The grid of glyphs that Set Kerning Keys Automatically found.
 
 A count of how many sides were grouped says nothing about whether the grouping
 was any good. The glyphs side by side, each with its measured wall drawn on the
