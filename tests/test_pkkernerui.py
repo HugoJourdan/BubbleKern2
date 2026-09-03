@@ -42,6 +42,7 @@ kerner = _load('PKKerner')
 sys.modules.setdefault('PKKerner', kerner)
 
 from AppKit import NSApplication  # noqa: E402
+from Foundation import NSObject  # noqa: E402
 from GlyphsApp import Glyphs  # noqa: E402  (the conftest stub)
 
 
@@ -420,3 +421,80 @@ def test_without_the_kerner_the_tool_still_has_its_own_window(withTool, monkeypa
 def test_start_publishes_the_plugin_for_the_tool_to_find():
 	source = (RESOURCES / 'PKKerner.py').read_text()
 	assert 'global mainKerner' in source and 'mainKerner = self' in source
+
+
+# --- the Edit menu ---------------------------------------------------------
+
+
+class _MenuTarget(NSObject):
+	"""Something with real selectors to hang the menu items on.
+
+	NSMenuItem wants a SEL, and the plugin's base class is faked here by a
+	plain Python class - so its methods are plain methods and pyobjc will not
+	take them. In Glyphs the base is an ObjC class and they are selectors.
+	`buildMenu` is a python_method, so it can be called against this instead.
+	"""
+	MENU_TITLE = None  # filled in by the fixture
+
+	def showWindow_(self, sender): pass
+	def generateSelected_(self, sender): pass
+	def generateAllMasters_(self, sender): pass
+	def clearSelected_(self, sender): pass
+	def clearAllMasters_(self, sender): pass
+
+
+@pytest.fixture
+def menu():
+	"""The submenu, built for real. -> (title, parent, items)"""
+	target = _MenuTarget.alloc().init()
+	target.MENU_TITLE = kerner.PolyKernKerner.MENU_TITLE
+	parent = kerner.PolyKernKerner.buildMenu(target)
+	return kerner.PolyKernKerner, parent, list(parent.submenu().itemArray())
+
+
+def test_the_submenu_hangs_off_a_polykern_item(menu):
+	_, parent, _ = menu
+	assert str(parent.title()) == 'PolyKern'
+
+
+def test_one_entry_opens_the_window(menu):
+	"""There is one window now, so there is one entry for it."""
+	plugin, _, items = menu
+	assert str(items[0].title()) == plugin.MENU_TITLE
+	assert str(items[0].title()) == 'PolyKern UI'
+
+
+def test_there_is_no_separate_settings_entry(menu):
+	"""The settings are a pane of that window, not a window of their own."""
+	_, _, items = menu
+	titles = [str(i.title()) for i in items]
+	assert not any('Settings' in t for t in titles), titles
+
+
+def test_the_window_entry_is_the_only_one_before_the_separator(menu):
+	_, _, items = menu
+	before = []
+	for item in items:
+		if item.isSeparatorItem():
+			break
+		before.append(str(item.title()))
+	assert before == ['PolyKern UI'], before
+
+
+def test_the_four_actions_are_still_there(menu):
+	_, _, items = menu
+	titles = [str(i.title()) for i in items if not i.isSeparatorItem()]
+	assert titles == [
+		'PolyKern UI',
+		'Generate PolyKern Fingerprints for Selected Glyphs',
+		'Generate PolyKern Fingerprints for Selected Glyphs in all Masters',
+		'Clear PolyKern Sides of Selected Glyphs',
+		'Clear PolyKern Sides of Selected Glyphs in all Masters',
+	], titles
+
+
+def test_the_all_masters_entries_are_still_option_alternates(menu):
+	_, _, items = menu
+	alternates = [str(i.title()) for i in items if i.isAlternate()]
+	assert len(alternates) == 2, alternates
+	assert all('all Masters' in t for t in alternates)

@@ -109,14 +109,25 @@ class PolyKernKerner(GeneralPlugin):
 		except Exception:
 			PKCommonLogic.log(f'preference migration failed: {traceback.format_exc()}',
 				error=True)
+		Glyphs.menu[EDIT_MENU].append(self.buildMenu())
+		self.registerParameterSheet()
+
+	MENU_TITLE = 'PolyKern UI'
+
+	@objc.python_method
+	def buildMenu(self):
+		"""The Edit > PolyKern submenu. -> NSMenuItem
+
+		ITS OWN METHOD so it can be built and read without a running Glyphs;
+		`start` only hangs it on the menu bar.
+		"""
 		submenu = NSMenu.alloc().initWithTitle_('PolyKern')
-		for title, action in (
-			(self.name, self.showWindow_),
-			('PolyKern Settings…', self.openSettings_),
-		):
-			item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, '')
-			item.setTarget_(self)
-			submenu.addItem_(item)
+		# ONE ENTRY FOR THE WINDOW, because there is one window. The kerner and
+		# the settings were two of these when they were two windows.
+		window = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			self.MENU_TITLE, self.showWindow_, '')
+		window.setTarget_(self)
+		submenu.addItem_(window)
 		submenu.addItem_(NSMenuItem.separatorItem())
 
 		generate = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
@@ -146,10 +157,10 @@ class PolyKernKerner(GeneralPlugin):
 		clearEverywhere.setAlternate_(True)
 		submenu.addItem_(clearEverywhere)
 
-		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_('PolyKern', None, '')
+		parent = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+			'PolyKern', None, '')
 		parent.setSubmenu_(submenu)
-		Glyphs.menu[EDIT_MENU].append(parent)
-		self.registerParameterSheet()
+		return parent
 
 	def registerParameterSheet(self):
 		# THE SETTINGS PARAMETER GETS ITS OWN EDITOR. Clicking its value in Font
