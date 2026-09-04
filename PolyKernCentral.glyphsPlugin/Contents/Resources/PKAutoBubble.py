@@ -1866,6 +1866,11 @@ def measurable(glyph, layer):
         return False
     if not len(layer.paths) and len(layer.components):
         return False
+    # A SEPARATOR IS AN ADVANCE AND NOTHING ELSE - no outline to measure, and
+    # nothing a neighbour could run into. `scan_layer` gives up on one anyway,
+    # for want of a box; said here it is a decision rather than a side effect.
+    if not len(layer.paths) and not len(layer.components):
+        return False
     return True
 
 

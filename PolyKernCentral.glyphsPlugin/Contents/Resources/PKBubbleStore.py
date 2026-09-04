@@ -16,7 +16,7 @@ import PKAutoBubble as auto
 import PKPreview as preview
 from PKSide import CONCEPTS, LEFT, RIGHT, SIDES, of
 from PKCommonLogic import (bubbleGroups, getFinalBubble, getKernValue,
-	isBlankWall, isMirrored, isReferenceValid, log, mergeableComposite,
+	hasInk, isBlankWall, isMirrored, isReferenceValid, log, mergeableComposite,
 	recordBox, tempToUserNodeX)
 
 # font.userData: EVERY PAIR THE PREVIEW WROTE, SO IT CAN ALWAYS BE TAKEN BACK
@@ -280,6 +280,11 @@ def writeBubble(layer, side, nodes=None, refer=None):
 
 
 def lockedSides(layer):  # (LEFT, RIGHT) SIDES THAT ARE NOT EDITED HERE
+	# NOTHING IS EDITED ON A LAYER WITH NO INK. A separator has no outline for
+	# a side to follow, so there is nothing for a handle to be dragged against
+	# and nothing a wall there could mean. See `hasInk`.
+	if not hasInk(layer):
+		return (True, True)
 	referL, referR = infoForLayer(layer)
 	return tuple(borrowed or isMirrored(layer, side.isLeft)
 		for borrowed, side in zip((bool(referL), bool(referR)), SIDES))

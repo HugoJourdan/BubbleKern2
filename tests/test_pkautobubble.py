@@ -1165,3 +1165,12 @@ def test_it_may_still_reach_further_out_inside_the_zone():
     rows = {row: None for row in range(0, 11)}
     held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
     assert held[10] == 20.0, held
+
+
+def test_a_separator_is_not_measured():
+    """An advance and nothing else. There is no outline for a side to follow
+    and nothing a neighbour could run into."""
+    glyph = SimpleNamespace(export=True, category="Separator", subCategory=None)
+    empty = SimpleNamespace(paths=[], components=[])
+    assert not pk.measurable(glyph, empty)
+    assert pk.measurable(glyph, SimpleNamespace(paths=[object()], components=[]))

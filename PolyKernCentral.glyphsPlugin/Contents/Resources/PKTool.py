@@ -48,7 +48,7 @@ from Foundation import NSMakeSize  # to size the toolbar icon
 
 from typing import Self
 
-from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, isBlankWall, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
+from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, hasInk, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
 import PKAutoBubble as auto
 import PKPreview as preview
 from PKGroupGrid import PKGroupGridView
@@ -743,7 +743,20 @@ class PolyKernTool(SelectTool):
 				return
 			layer = self.activeLayer
 
-			for side, field in zip(SIDES, (self.w.group.glyphNameL, self.w.group.glyphNameR)):
+			# NOTHING TO SET ON A LAYER WITH NO INK. Emptied and turned off
+			# rather than hidden, so a separator arrived at by accident says
+			# there is nothing to do here instead of looking broken. See
+			# `hasInk`.
+			fields = (self.w.group.glyphNameL, self.w.group.glyphNameR)
+			inked = hasInk(layer)
+			for field in fields:
+				field.enable(inked)
+			if not inked:
+				for field in fields:
+					field.set('')
+				return
+
+			for side, field in zip(SIDES, fields):
 				if isMirrored(layer, side.isLeft):
 					# A MIRRORED SIDE READS BACK AS WHAT WAS TYPED TO MAKE IT ONE.
 					field.set(MIRROR_TOKEN)
@@ -873,6 +886,12 @@ class PolyKernTool(SelectTool):
 		try:
 			if layer is None or layer.name is None:
 				return
+			# A SIDE IS NOT SET ON A LAYER WITH NO INK. The fields are disabled
+			# for one, so nothing should reach here - but a field holds what it
+			# held until it is redrawn, and the last glyph's answer must not be
+			# written onto this one. See `hasInk`.
+			if not hasInk(layer):
+				return
 
 			# SAVE INTERFACE'S GLYPH NAMES FOR L AND R
 			for side, value in zip(SIDES, (self.w.group.glyphNameL.get(), self.w.group.glyphNameR.get())):
@@ -908,6 +927,13 @@ class PolyKernTool(SelectTool):
 	@objc.python_method
 	def saveNodesToLayer(self, layer):  # SAVES NODES FROM TEMPDATA TO USERDATA.
 		if layer is None or layer.name is None:
+			return
+		# NOTHING IS STAMPED ON A LAYER WITH NO INK. This ran over every layer
+		# of every glyph on the first activation, and what it wrote on the
+		# separators was the made-up line from descender to ascender - stored,
+		# so indistinguishable ever after from a wall somebody drew. See
+		# `hasInk`.
+		if not hasInk(layer):
 			return
 		m = layer.master
 		italicAngle, xHeight = m.italicAngle, m.xHeight
@@ -1060,6 +1086,10 @@ class PolyKernTool(SelectTool):
 	@objc.python_method
 	def foreground(self, layer):  # layer to draw nodes
 		if Glyphs.font.tool != self.__class__.__name__ or layer == None or layer.name is None:  # 'PolyKernTool'
+			return
+		# NO INK, NO HANDLES. `lockedSides` says the same thing a line further
+		# in, but the coordinates and the rest of this draw for nobody too.
+		if not hasInk(layer):
 			return
 		try:
 			graphicView = self.editViewController().graphicView()
@@ -1247,6 +1277,9 @@ class PolyKernTool(SelectTool):
 			# AN AUTO-ALIGNED COMPOSITE GETS ITS WALL DRAWN TOO. Editing the
 			# nodes stays barred on an aligned layer; seeing the wall does not
 			# need to be.
+			# NOT ON A LAYER WITH NO INK, EDITED OR NOT. See `hasInk`.
+			if not hasInk(layer):
+				return
 			bubbles: dict | None = self.loadNodesFromLayer(layer, False)
 			scale = drawOptions["Scale"].doubleValue()
 			if not bubbles or scale < 0.1: # no bubble or font size is smaller than 100 pts
@@ -1255,15 +1288,6 @@ class PolyKernTool(SelectTool):
 			for side in SIDES:
 				# A MADE-UP WALL IS NOT DRAWN ON A LAYER NOBODY IS EDITING.
 				if not active and bubbles.get(side.defaultKey, False):
-					continue
-				# AND NEVER ON A LAYER WITH NO INK IN IT. A space has no shape
-				# for a wall to follow, so what it carries is the made-up line
-				# from descender to ascender - and the seeding pass writes that
-				# line into userData, where the guard above cannot see it. Left
-				# drawn, every space in the tab stands a full-height rule beside
-				# the glyph being edited, in the colour of a wall somebody meant.
-				if not layer.shapes and isBlankWall(
-						layer.userData[side.key('Nodes')] or ()):
 					continue
 				side.color().colorWithAlphaComponent_(0.5).set()
 				if isStale(layer, side.isLeft):

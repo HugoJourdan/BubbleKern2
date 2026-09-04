@@ -199,6 +199,22 @@ def isTranslationOnly(transform) -> bool:
 		return False
 	return a == 1.0 and b == 0.0 and c == 0.0 and d == 1.0
 
+def hasInk(layer) -> bool:
+	# IS THERE ANYTHING HERE FOR A WALL TO DESCRIBE?
+	#
+	# A SEPARATOR - space, nbspace, the fixed-width ones - IS AN ADVANCE AND
+	# NOTHING ELSE. There is no outline for a side to follow, nothing to see if
+	# one were drawn, and nothing a neighbour could run into: what a wall on one
+	# would be is a full-height rule standing in the whitespace, saying nothing
+	# and getting in the way of the glyph being edited beside it.
+	#
+	# `shapes` RATHER THAN `paths`: a composite is made of ink somewhere else,
+	# and it has a wall - its components' - like any other glyph.
+	try:
+		return layer is not None and bool(layer.shapes)
+	except Exception:
+		return False
+
 def isBlankWall(nodes) -> bool:
 	# THE DEFAULT STRAIGHT LINE ON THE ORIGIN - what a layer carries when nobody
 	# has drawn it a bubble. It says nothing about a shape, and on a composite it
