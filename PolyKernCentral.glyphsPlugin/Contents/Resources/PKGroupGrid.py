@@ -114,11 +114,15 @@ class PKGroupGridView(NSView):
 				self._bands.append((top, group))
 				top += GROUP_HEADER
 				members = group['members']
+				# A MEMBER THAT MIRRORS THE BAND IS DRAWN ON ITS OWN SIDE. It
+				# is the same wall, and drawing it on the band's side would put
+				# it against the edge of the glyph it is not on.
+				sides = group.get('sides', {})
 				for index, name in enumerate(members):
 					self._cells.append((
 						GROUP_PAD + (index % columns) * (GROUP_CELL + GROUP_GUTTER),
 						top + (index // columns) * row,
-						name, group['side']))
+						name, sides.get(name, group['side'])))
 				top += ((len(members) + columns - 1) // columns) * row + GROUP_PAD
 			objc.super(PKGroupGridView, self).setFrameSize_((width, max(top, 1.0)))
 		except Exception:

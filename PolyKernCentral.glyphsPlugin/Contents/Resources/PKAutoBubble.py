@@ -542,6 +542,93 @@ def cluster_kern_side(profiles, tolerance, step, rounds=MEDOID_ROUNDS):
     }
 
 
+# --- One band can be another one, flipped ---------------------------------
+# A LEFT PROFILE AND A RIGHT PROFILE ARE THE SAME NUMBERS. Both say how far the
+# whitespace runs in from the glyph's own edge, so `d`'s left and `b`'s right
+# are not two shapes to be compared once one of them is flipped - the flip is
+# already in the measurement. Asking whether a side mirrors another is asking
+# whether two profiles agree, exactly as asking whether two of the same side do.
+#
+# WHICH IS A GROUP FEWER, AND A WALL FEWER. `b d p q`, `n u`, and both sides of
+# every symmetrical glyph are one drawing between them rather than two, and a
+# change to it is a change to all of them - which is what a group is for.
+
+
+def _fits_every(cell, held, profiles, limits, tolerance, step):
+    """Is this side within tolerance of every side already in the band?
+
+    THE SAME RULE THE CLUSTERING ITSELF KEEPS: within tolerance of every
+    member, not just of the one that happens to lead. `held` grows as a band
+    takes another in, so the second one taken has to fit the first as well.
+    """
+    side, name = cell
+    for other in held:
+        distance = kern_fit(profiles[side][name], profiles[other[0]][other[1]],
+                            step, limits[cell], limits[other])
+        if distance > tolerance:
+            return False
+    return True
+
+
+def side_bands(clusters, profiles):
+    """Every band a run has, both sides. -> [(side, name, members)]
+
+    A GLYPH IN NO GROUP IS A BAND OF ONE. `cluster_kern_side` drops those -
+    there is nothing to compare in a band of one on its own side - but the
+    other side is exactly where the thing it mirrors would be, and a lone `d`
+    left against a lone `b` right is the case this is here for.
+    """
+    bands = []
+    for side in sorted(clusters, key=str):
+        grouped = set()
+        for name, members in sorted(clusters[side].items()):
+            bands.append((side, name, list(members)))
+            grouped.update(members)
+        for name in sorted(profiles[side]):
+            if name not in grouped:
+                bands.append((side, name, [name]))
+    return bands
+
+
+def mirror_folds(clusters, profiles, tolerance, step):
+    """Which bands are a band on the other side, flipped. -> {side: {name: host}}
+
+    ONE ENTRY PER BAND, ON ITS REPRESENTATIVE, and its own members go on
+    pointing at it: `dcaron` reads `d`, and `d` reads the other side of `b`. A
+    member mirroring `b` directly would have said the same thing and left its
+    kerning group to say it, and the group is the thing the kerner needs.
+
+    NOTHING FOLDS TWICE, so no member ever reads a side that reads a third: a
+    band that has been taken cannot host, and a band that has hosted has
+    already had its turn to be taken.
+    """
+    limits = {(side, name): cone_limits(profile, step)
+              for side, table in profiles.items()
+              for name, profile in table.items()}
+    bands = side_bands(clusters, profiles)
+    # THE BIGGEST BAND HOSTS. A fold is one band fewer whichever way round it
+    # goes, so what the order decides is only whose name the survivor carries,
+    # and the group with the most in it is the one a designer will recognise.
+    bands.sort(key=lambda band: (-len(band[2]), str(band[0]), band[1]))
+    folds = {side: {} for side in profiles}
+    taken = set()
+    for index, (side, name, members) in enumerate(bands):
+        if index in taken:
+            continue
+        held = [(side, member) for member in members]
+        for other in range(index + 1, len(bands)):
+            if other in taken or bands[other][0] == side:
+                continue
+            cells = [(bands[other][0], member) for member in bands[other][2]]
+            if not all(_fits_every(cell, held, profiles, limits, tolerance, step)
+                       for cell in cells):
+                continue
+            folds[bands[other][0]][bands[other][1]] = name
+            held.extend(cells)
+            taken.add(other)
+    return folds
+
+
 # --- The other road to a group -------------------------------------------
 
 # WHERE A RUN GETS ITS GROUPS FROM. The wall a group's representative carries
@@ -1915,10 +2002,13 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
                      max_nodes=DEFAULT_MAX_NODES, grid=0,
                      tolerance_em=GROUP_TOL_EM, sides=(LEFT, RIGHT),
                      slope=WALL_SLOPE, max_inset=None, amplitude=AMPLITUDE,
-                     align=None, progress=None, names=None, source=BY_SHAPE):
+                     align=None, progress=None, names=None, source=BY_SHAPE,
+                     mirrors=True):
     """Everything a font-wide run would write, decided before anything is.
 
-    -> {side: {"nodes": {glyph: [(x, y)]}, "refer": {member: representative}}}
+    -> {side: {"nodes": {glyph: [(x, y)]},
+               "refer": {member: representative},
+               "mirror": {representative: the glyph whose OTHER side it is}}}
 
     A cluster's representative gets a bubble built from ITS OWN profile rather
     than the group medoid's, so its drawing is honest about its own shape;
@@ -1937,6 +2027,11 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
     THE GROUPING CHANGES. Every wall is scanned, built and simplified the same
     way either road, so the two differ in who shares a wall and in nothing
     else.
+
+    `mirrors` LETS A BAND BE ANOTHER BAND FLIPPED - see `mirror_folds`. It
+    needs both sides in the run: a left side reading `=|b` reads a wall on
+    `b`'s RIGHT, and a run that was not asked to draw right walls has no
+    business assuming one is there.
     """
     if step is None:
         step = raster_step(font)
@@ -1948,22 +2043,37 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
         align = font.upm * ALIGN_EM
     measured, geometry = collect_sides(font, master, step, progress, names)
     group_tolerance = font.upm * tolerance_em
-    plan = {}
+    clusters = {}
     for side in sides:
         profiles = measured[side]
         if source == BY_KERNING_GROUPS:
-            groups = kerning_group_clusters(font, profiles, side, step)
+            clusters[side] = kerning_group_clusters(font, profiles, side, step)
         else:
-            groups = cluster_kern_side(profiles, group_tolerance, step)
+            clusters[side] = cluster_kern_side(profiles, group_tolerance, step)
+    # BOTH SIDES BEFORE EITHER IS WRITTEN, because a fold is a thing one side
+    # says about the other and neither can be planned without the pair.
+    #
+    # A ONE-SIDED RUN FOLDS NOTHING, TWICE OVER: it is said here, and what is
+    # handed over is the run's OWN profiles, which on a one-sided run have no
+    # other side in them to fold into. The second is what actually enforces it.
+    folds = {side: {} for side in sides}
+    if mirrors and len(sides) > 1:
+        folds = mirror_folds(clusters, {side: measured[side] for side in sides},
+                             group_tolerance, step)
+    plan = {}
+    for side in sides:
+        profiles = measured[side]
+        groups = clusters[side]
         refer = {
             member: representative
             for representative, members in groups.items()
             for member in members
             if member != representative
         }
+        mirrored = folds.get(side, {})
         nodes = {}
         for name, profile in profiles.items():
-            if name in refer:
+            if name in refer or name in mirrored:
                 continue
             low_y, high_y, width = geometry[name]
             this_gap = gap
@@ -1974,7 +2084,7 @@ def auto_bubble_plan(font, master, gap=None, step=None, tolerance=None,
                 tolerance, max_nodes, grid, slope, max_inset, amplitude,
                 align, font.upm * MIN_GAP_EM,
             )
-        plan[side] = {"nodes": nodes, "refer": refer}
+        plan[side] = {"nodes": nodes, "refer": refer, "mirror": mirrored}
     return plan
 
 

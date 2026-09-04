@@ -279,3 +279,44 @@ def test_a_mirror_pointing_at_a_side_that_draws_its_own_is_fine(side):
 	layer.userData[side.key('Mirror')] = 'o'
 	target.userData[side.other.key('Nodes')] = [(0, 0), (0, 700)]
 	assert logic.isReferenceValid(layer, side) is True
+
+
+# --- Writing a mirror -------------------------------------------------------
+
+
+def test_writing_a_mirror_clears_the_other_two_ways(side):
+	layer, _target = _pair()
+	layer.userData[side.key('Nodes')] = [(0, 0), (0, 700)]
+	layer.userData[side.key('Refer')] = 'o'
+	layer.userData.set.clear()
+	assert store.writeBubble(layer, side, mirror='o') is True
+	assert layer.userData[side.key('Mirror')] == 'o'
+	assert set(layer.userData.deleted) == {side.key('Refer'), side.key('Nodes')}
+
+
+def test_a_bare_mirror_is_refused_where_the_other_side_is_one(side):
+	"""Two bare mirrors read each other and so read nothing. Refused rather
+	than fixed by clearing the other side, which is a wall somebody has."""
+	layer, _target = _pair()
+	layer.userData[side.other.key('Mirror')] = True
+	assert store.writeBubble(layer, side, mirror=True) is False
+	assert layer.userData[side.key('Mirror')] is None
+
+
+def test_a_named_mirror_survives_a_bare_one_opposite_it(side):
+	"""Two bare `=|` read each other and so read nothing. A named one reads
+	ANOTHER GLYPH, and the side opposite it can still be the bare kind: it
+	ends up being that other glyph's wall, twice flipped, which is that other
+	glyph's wall."""
+	layer = Layer()
+	layer.userData[side.key('Mirror')] = 'o'
+	layer.userData[side.other.key('Mirror')] = True
+	assert logic.isMirrored(layer, side.isLeft) is True
+	assert logic.isMirrored(layer, side.other.isLeft) is True
+
+
+def test_two_bare_mirrors_are_neither(side):
+	layer = Layer()
+	layer.userData[LEFT.key('Mirror')] = True
+	layer.userData[RIGHT.key('Mirror')] = True
+	assert logic.isMirrored(layer, side.isLeft) is False

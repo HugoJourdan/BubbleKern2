@@ -16,7 +16,8 @@ import PKAutoBubble as auto
 import PKPreview as preview
 from PKSide import CONCEPTS, LEFT, RIGHT, SIDES, of
 from PKCommonLogic import (bubbleGroups, getFinalBubble, getKernValue,
-	hasInk, isBlankWall, isMirrored, isReferenceValid, log, mergeableComposite,
+	hasInk, isBlankWall, isMirrored, mirrorPartners, mirrorSource,
+	isReferenceValid, log, mergeableComposite,
 	recordBox, tempToUserNodeX)
 
 # font.userData: EVERY PAIR THE PREVIEW WROTE, SO IT CAN ALWAYS BE TAKEN BACK
@@ -249,10 +250,14 @@ def mergeFromComponents(layer, side):
 		return False
 
 
-def writeBubble(layer, side, nodes=None, refer=None):
-	# ONE SIDE OF ONE LAYER, AS ONE UNDO STEP. NODES AND A REFERENCE ARE
-	# ALTERNATIVES: gatherBubbleInfo READS THE REFERENCE FIRST, SO LEAVING
-	# THE OTHER BEHIND WOULD LEAVE DEAD DATA IN THE FILE.
+def writeBubble(layer, side, nodes=None, refer=None, mirror=None):
+	# ONE SIDE OF ONE LAYER, AS ONE UNDO STEP. NODES, A REFERENCE AND A MIRROR
+	# ARE ALTERNATIVES: gatherBubbleInfo READS THE MIRROR FIRST AND THE
+	# REFERENCE NEXT, SO LEAVING EITHER OTHER BEHIND WOULD LEAVE DEAD DATA IN
+	# THE FILE.
+	#
+	# `mirror` IS `True` FOR THIS GLYPH'S OWN OTHER SIDE AND A NAME FOR
+	# ANOTHER GLYPH'S - one branch for both, because both are the flag.
 	nodesKey, referKey = side.key('Nodes'), side.key('Refer')
 	mirrorKey = side.key('Mirror')
 	glyph = layer.parent
@@ -271,6 +276,22 @@ def writeBubble(layer, side, nodes=None, refer=None):
 				del layer.userData[mirrorKey]
 			if not isReferenceValid(layer, side):  # WOULD BE A CYCLE
 				del layer.userData[referKey]
+				return False
+			if layer.userData[nodesKey]:
+				del layer.userData[nodesKey]
+		elif mirror is not None:
+			# TWO BARE MIRRORS READ EACH OTHER AND SO READ NOTHING. Refused
+			# rather than fixed by clearing the other side, which is a wall
+			# somebody has, and the caller has a wall of its own to fall back
+			# on.
+			if (mirror is True and isMirrored(layer, not side.isLeft)
+					and not mirrorSource(layer, not side.isLeft)):
+				return False
+			layer.userData[mirrorKey] = mirror
+			if layer.userData[referKey]:
+				del layer.userData[referKey]
+			if not isReferenceValid(layer, side):  # WOULD BE A CYCLE
+				del layer.userData[mirrorKey]
 				return False
 			if layer.userData[nodesKey]:
 				del layer.userData[nodesKey]
@@ -374,6 +395,31 @@ def applyPreviewKerning(font=None):
 		log(f'applyPreviewKerning error: {traceback.format_exc()}', error=True)
 
 
+def attachMirrors(groups, partners):
+	"""Put every mirrored side into the band whose wall it reads. -> groups
+
+	IN THAT BAND, AND DRAWN ON ITS OWN SIDE, which is the whole of what makes
+	it one band and not two: `d`'s left is not LIKE `b`'s right, it IS `b`'s
+	right, and a picture of the groups that split them in two would be a
+	picture of a font that had drawn the wall twice.
+
+	`sides` on a band names the members whose side is not the band's. Absent
+	when there are none, so nothing that never mirrors carries the question.
+	"""
+	for (side, name), host in sorted(partners.items(),
+			key=lambda item: (str(item[0][0]), item[0][1])):
+		band = next((group for group in groups
+			if group['side'] is side.other and host in group['members']), None)
+		if band is None:
+			# THE HOST NEED NOT BE IN A BAND OF ITS OWN. One glyph reading the
+			# other side of one other glyph is still two glyphs sharing a wall.
+			band = {'side': side.other, 'name': host, 'members': [host]}
+			groups.append(band)
+		band['members'].append(name)
+		band.setdefault('sides', {})[name] = side
+	return groups
+
+
 def planGroups(plan, sides):
 	"""The groups the plan found, biggest first. -> [dict]
 
@@ -391,6 +437,12 @@ def planGroups(plan, sides):
 			# drawing the rest of them point at.
 			groups.append({'side': side, 'name': representative,
 					'members': [representative] + sorted(names)})
+	partners = {}
+	for side in sides:
+		for member, host in plan[side].get('mirror', {}).items():
+			if member != host:  # a glyph reading its own other side is one glyph
+				partners[(side, member)] = host
+	attachMirrors(groups, partners)
 	groups.sort(key=lambda group: (-len(group['members']), group['name']))
 	return groups
 
@@ -423,6 +475,11 @@ def referGroups(font, masterId, sides=SIDES):
 				# one carrying the drawing the rest of them point at.
 				groups.append({'side': side, 'name': representative,
 						'members': [representative] + sorted(names - {representative})})
+		# AND THE BANDS THAT ARE ANOTHER BAND FLIPPED, which `bubbleGroups`
+		# does not know about because they are not kerning groups.
+		attachMirrors(groups, {cell: host
+			for cell, host in mirrorPartners(font, masterId).items()
+			if cell[0] in sides})
 		groups.sort(key=lambda group: (-len(group['members']), group['name']))
 		return groups
 	except Exception:
@@ -434,9 +491,27 @@ def writePlan(font, master, plan, sides, overwrite):
 	# -> (drawn, referred, kept). A SIDE THAT ALREADY CARRIES A DRAWING OR A
 	# REFERENCE IS LEFT ALONE UNLESS overwrite, WHICH IS WHAT MAKES A SECOND
 	# RUN OVER A HALF-DRAWN FONT SAFE.
-	drawn = referred = kept = 0
+	drawn = referred = kept = mirrored = 0
+
+	def drawInstead(layer, side):
+		# WHAT A SIDE GETS WHEN THE GROUPING CANNOT BE WRITTEN: its own wall,
+		# measured now. A reference that would have closed a cycle through a
+		# chain the run did not touch, or a mirror the other side already
+		# mirrors back.
+		fallback = auto.auto_settings(font, master)
+		nodes = auto.auto_bubble_nodes(layer, side, gap=fallback['gap'],
+			step=fallback['step'], tolerance=fallback['tolerance'],
+			max_nodes=fallback['max_nodes'], grid=auto.resolve_grid(font, master),
+			slope=fallback['slope'], max_inset=fallback['max_inset'],
+			amplitude=fallback['amplitude'])
+		if not nodes:
+			return False
+		writeBubble(layer, side, nodes=nodes)
+		return True
+
 	for side in sides:
 		nodesKey, referKey = side.key('Nodes'), side.key('Refer')
+		mirrorKey = side.key('Mirror')
 		part = plan[side]
 		for name, nodes in part['nodes'].items():
 			layer = layerFor(font, name, master)
@@ -456,17 +531,29 @@ def writePlan(font, master, plan, sides, overwrite):
 				continue
 			if writeBubble(layer, side, refer=representative):
 				referred += 1
-			else:
-				# THE REFERENCE WOULD HAVE CLOSED A CYCLE THROUGH A CHAIN THE
-				# RUN DID NOT TOUCH; GIVE THIS ONE ITS OWN BUBBLE INSTEAD.
-				fallback = auto.auto_settings(font, master)
-				nodes = auto.auto_bubble_nodes(layer, side, gap=fallback['gap'],
-					step=fallback['step'], tolerance=fallback['tolerance'],
-					max_nodes=fallback['max_nodes'], grid=auto.resolve_grid(font, master),
-					slope=fallback['slope'], max_inset=fallback['max_inset'], amplitude=fallback['amplitude'])
-				if nodes:
-					writeBubble(layer, side, nodes=nodes)
-					drawn += 1
+			elif drawInstead(layer, side):
+				drawn += 1
+		# A BAND THAT IS ANOTHER BAND FLIPPED. Its representative reads the
+		# OTHER side of another glyph; its own members go on pointing at it,
+		# so the group the kerner sees is the group it always was.
+		for member, host in part.get('mirror', {}).items():
+			layer = layerFor(font, member, master)
+			if layer is None:
+				continue
+			if not overwrite and (layer.userData[nodesKey]
+					or layer.userData[referKey] or layer.userData[mirrorKey]):
+				kept += 1
+				continue
+			# THE SAME GLYPH'S OTHER SIDE IS THE BARE `=|`: there is no need to
+			# spell out the name of the glyph you are standing on, and a font
+			# full of `=|o` on `o` would only invite the question.
+			if writeBubble(layer, side, mirror=(True if host == member else host)):
+				referred += 1
+				mirrored += 1
+			elif drawInstead(layer, side):
+				drawn += 1
+	if mirrored:
+		log(f'{mirrored} side(s) mirrored from the other side of another glyph')
 	return drawn, referred, kept
 
 

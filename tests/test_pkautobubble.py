@@ -1174,3 +1174,85 @@ def test_a_separator_is_not_measured():
     empty = SimpleNamespace(paths=[], components=[])
     assert not pk.measurable(glyph, empty)
     assert pk.measurable(glyph, SimpleNamespace(paths=[object()], components=[]))
+
+
+# --- A band that is another band flipped ------------------------------------
+# A left profile and a right profile are the same numbers - how far the
+# whitespace runs in from the glyph's own edge - so the flip is already in the
+# measurement and two sides mirror when their profiles agree.
+
+
+def _sides(left, right):
+    return {pk.LEFT: left, pk.RIGHT: right}
+
+
+def test_a_symmetrical_glyph_reads_its_own_other_side():
+    """Which is the bare `=|` it has always been: one wall for the glyph."""
+    profiles = _sides({"o": flat(range(10), 40)}, {"o": flat(range(10), 42)})
+    folds = pk.mirror_folds(_sides({}, {}), profiles, 20, 10)
+    assert folds[pk.RIGHT] == {"o": "o"}
+    assert folds[pk.LEFT] == {}
+
+
+def test_the_band_with_the_most_in_it_hosts():
+    """`d`'s left is the round side `b`, `o` and `p` share on the right, and
+    the group somebody will recognise is the one already called `b`."""
+    profiles = _sides(
+        {"d": flat(range(10), 30)},
+        {"b": flat(range(10), 31), "o": flat(range(10), 33),
+         "p": flat(range(10), 29)},
+    )
+    folds = pk.mirror_folds(_sides({}, {"b": ["b", "o", "p"]}), profiles, 20, 10)
+    assert folds[pk.LEFT] == {"d": "b"}
+    assert folds[pk.RIGHT] == {}
+
+
+def test_a_side_nothing_looks_like_stays_its_own():
+    profiles = _sides({"d": flat(range(10), 30)}, {"T": flat(range(10), 200)})
+    folds = pk.mirror_folds(_sides({}, {}), profiles, 20, 10)
+    assert folds == _sides({}, {})
+
+
+def test_a_fold_is_never_a_chain():
+    """Four bands that all mirror each other. Whatever is folded reads a side
+    that draws its own wall: a side reading a side that reads a third is a
+    wall nobody drew, and one edit away from a wall nobody wanted."""
+    profiles = _sides(
+        {"a": flat(range(10), 30), "b": flat(range(10), 31)},
+        {"c": flat(range(10), 32), "d": flat(range(10), 33)},
+    )
+    folds = pk.mirror_folds(_sides({}, {}), profiles, 20, 10)
+    folded = {(side, name) for side in (pk.LEFT, pk.RIGHT) for name in folds[side]}
+    hosts = {(side.other, host) for side in (pk.LEFT, pk.RIGHT)
+             for host in folds[side].values()}
+    assert folded, 'nothing folded, so this proves nothing'
+    assert not (folded & hosts), 'a fold read a side that was itself folded'
+
+
+def test_only_one_side_of_a_run_folds_nothing(monkeypatch):
+    """A left side reading `=|b` reads a wall on `b`'s RIGHT, and a run that
+    was not asked to draw right walls has no business assuming one is there."""
+    def collect(font, master, step, progress=None, names=None):
+        return (_sides({"o": flat(range(10), 40)}, {"o": flat(range(10), 41)}),
+                {"o": (0.0, 700.0, 500)})
+
+    monkeypatch.setattr(pk, "collect_sides", collect)
+    font = SimpleNamespace(upm=1000, glyphs=[])
+    plan = pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10,
+                               tolerance=5, gap=10, sides=(pk.LEFT,))
+    assert plan[pk.LEFT]["mirror"] == {}
+    assert "o" in plan[pk.LEFT]["nodes"]
+
+
+def test_the_plan_mirrors_a_side_instead_of_drawing_it(monkeypatch):
+    def collect(font, master, step, progress=None, names=None):
+        return (_sides({"o": flat(range(10), 40)}, {"o": flat(range(10), 41)}),
+                {"o": (0.0, 700.0, 500)})
+
+    monkeypatch.setattr(pk, "collect_sides", collect)
+    font = SimpleNamespace(upm=1000, glyphs=[])
+    plan = pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10,
+                               tolerance=5, gap=10)
+    assert plan[pk.RIGHT]["mirror"] == {"o": "o"}
+    assert "o" not in plan[pk.RIGHT]["nodes"], 'a mirrored side draws nothing'
+    assert "o" in plan[pk.LEFT]["nodes"], 'the side it reads is drawn'

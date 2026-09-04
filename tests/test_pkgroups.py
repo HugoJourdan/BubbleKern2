@@ -202,3 +202,52 @@ def test_the_caption_counts_the_bands_and_the_glyphs():
 	said = kerner.PolyKernKerner.groupsCaption(None,
 			[{'name': 'o', 'members': ['o', 'c', 'e']}])
 	assert said.startswith('1 group, 3 glyphs'), said
+
+
+# --- A band that is another band flipped ------------------------------------
+# `=|b` on `d`'s left is not a wall LIKE `b`'s right, it IS `b`'s right. So the
+# two are one band, and the pane draws each member on the side its wall is on.
+
+
+def test_a_mirrored_side_is_in_the_band_it_reads():
+	font = Font()
+	font.add('b')
+	font.add('d', **{LEFT.key('Mirror'): 'b'})
+	groups = store.referGroups(font, MASTER)
+	assert len(groups) == 1, groups
+	band = groups[0]
+	assert (band['side'], band['name']) == (RIGHT, 'b')
+	assert band['members'] == ['b', 'd']
+	assert band['sides'] == {'d': LEFT}, 'd is drawn on its own side'
+
+
+def test_a_mirrored_side_joins_the_band_its_glyph_is_already_in():
+	font = _font(('o', None, None), ('b', RIGHT, 'o'))
+	font.add('d', **{LEFT.key('Mirror'): 'b'})
+	groups = store.referGroups(font, MASTER)
+	assert len(groups) == 1, groups
+	assert groups[0]['members'] == ['o', 'b', 'd']
+	assert groups[0]['sides'] == {'d': LEFT}
+
+
+def test_a_glyph_reading_its_own_other_side_is_not_a_band():
+	"""One glyph, one wall, nothing shared with anybody: a band with the same
+	glyph in it twice answers a question nobody asked."""
+	font = Font()
+	font.add('o', **{RIGHT.key('Mirror'): True})
+	assert store.referGroups(font, MASTER) == []
+
+
+def test_a_mirror_of_a_glyph_that_is_gone_is_not_a_band():
+	font = Font()
+	font.add('d', **{LEFT.key('Mirror'): 'nosuchglyph'})
+	assert store.referGroups(font, MASTER) == []
+
+
+def test_the_results_sheet_shows_what_the_run_mirrored():
+	plan = {LEFT: {'nodes': {}, 'refer': {}, 'mirror': {'d': 'b'}},
+			RIGHT: {'nodes': {}, 'refer': {'o': 'b'}, 'mirror': {}}}
+	groups = store.planGroups(plan, (LEFT, RIGHT))
+	assert len(groups) == 1, groups
+	assert groups[0]['members'] == ['b', 'o', 'd']
+	assert groups[0]['sides'] == {'d': LEFT}

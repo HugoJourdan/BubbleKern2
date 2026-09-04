@@ -773,9 +773,16 @@ def needsGenerating(layer, isLeft) -> bool:
 			and layer.userData[side.key('Box')])
 
 def isMirrored(layer, isLeft) -> bool:
-	# BOTH SIDES MIRRORING EACH OTHER WOULD RECURSE FOR EVER AND MEANS NOTHING;
-	# TREAT THAT AS NEITHER.
-	if layer.userData[LEFT.key('Mirror')] and layer.userData[RIGHT.key('Mirror')]:
+	# TWO SIDES EACH READING THE OTHER WOULD RECURSE FOR EVER AND MEANS
+	# NOTHING; TREAT THAT AS NEITHER.
+	#
+	# ONLY WHEN BOTH ARE THE BARE `=|`, which is the only mirror that reads
+	# THIS layer. `=|b` on the left and `=|x` on the right are two walls from
+	# two other glyphs and resolve perfectly well, and so does a bare `=|` on
+	# one side with a named mirror on the other - it ends up being that other
+	# glyph's wall, twice flipped, which is that other glyph's wall.
+	if (layer.userData[LEFT.key('Mirror')] and layer.userData[RIGHT.key('Mirror')]
+			and not mirrorSource(layer, True) and not mirrorSource(layer, False)):
 		return False
 	return bool(layer.userData[of(isLeft).key('Mirror')])
 
@@ -975,6 +982,34 @@ def resolveReference(layer, side, limit=16):
 	except Exception:
 		log(f'resolveReference error: {traceback.format_exc()}', error=True)
 		return None
+
+def mirrorPartners(font, masterId):
+	# WHICH SIDES READ THE OTHER SIDE OF ANOTHER GLYPH. -> {(side, name): host}
+	#
+	# NOT A KERNING GROUP, WHICH IS WHY IT IS NOT IN `bubbleGroups`: `d`'s left
+	# and `b`'s right are one wall, but they are one wall on two different
+	# sides, and a kern value is a thing said about one side of each of two
+	# glyphs. What they are is one BAND - one drawing, read from two places -
+	# which is what the Groups pane is a picture of.
+	#
+	# A BARE `=|` IS LEFT OUT. It is one glyph reading itself, and a band with
+	# the same glyph in it twice says nothing anybody was asking.
+	partners = {}
+	try:
+		for glyph in font.glyphs:
+			layer = glyph.layers[masterId]
+			if layer is None:
+				continue
+			for side in (LEFT, RIGHT):
+				if not isMirrored(layer, side.isLeft):
+					continue
+				host = mirrorSource(layer, side.isLeft)
+				if not host or not isReferenceValid(layer, side):
+					continue
+				partners[(side, glyph.name)] = host
+	except Exception:
+		log(f'mirrorPartners error: {traceback.format_exc()}', error=True)
+	return partners
 
 def bubbleGroups(font, masterId):
 	# -> ({glyph: rightGroup}, {glyph: leftGroup}), INCLUDING EACH GROUP'S OWN
