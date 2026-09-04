@@ -201,14 +201,31 @@ def bevel_profile(profile, step, slope=S1_SLOPE):
     return beveled
 
 
-def kern_profiles(rows, width, step):
+def kern_profiles(rows, width, step, mid=None):
     """The kern-relevant profile of each side. -> {LEFT: {...}, RIGHT: {...}}
 
     Measured from the ORIGIN and the ADVANCE, not from the ink's own extremes:
     that is the whitespace a neighbour actually sees.
+
+    EACH SIDE READS ITS OWN HALF OF THE BOX. `mid` is the middle of the
+    layer's bounding box, and a row whose outermost ink on this side falls on
+    the wrong side of it is not describing this side at all. The overshoot
+    rows of a glyph with a round left and a flat right carry nothing but the
+    cap of the curve, which sits in the LEFT half: read as the right side's
+    reach it dragged the right wall inward across rows where the right side
+    has no ink to answer for.
+
+    A ROW LEFT OUT IS NOT A HOLE. `cone_frontier` recedes across the rows a
+    profile says nothing about, which is the same thing that opens `T` up
+    below its arm - so a side simply stops being measured where it stops
+    being there. `mid` of None measures the whole row, as it always did.
     """
-    left = {row: xs[0] for row, xs in rows.items()}
-    right = {row: width - xs[1] for row, xs in rows.items()}
+    if mid is None:
+        left = {row: xs[0] for row, xs in rows.items()}
+        right = {row: width - xs[1] for row, xs in rows.items()}
+    else:
+        left = {row: xs[0] for row, xs in rows.items() if xs[0] <= mid}
+        right = {row: width - xs[1] for row, xs in rows.items() if xs[1] >= mid}
     return {
         LEFT: bevel_profile(left, step),
         RIGHT: bevel_profile(right, step),
@@ -1799,7 +1816,8 @@ def collect_sides(font, master, step, progress=None, names=None):
         rows = scanned[0]
         if len(rows) < MIN_ROWS_TO_MEASURE:
             continue
-        measured = kern_profiles(rows, layer.width, step)
+        measured = kern_profiles(rows, layer.width, step,
+                                 (scanned[1] + scanned[2]) / 2.0)
         for side in (LEFT, RIGHT):
             sides[side][glyph.name] = measured[side]
         low_y, high_y = layer_span(layer, master)
@@ -1901,7 +1919,8 @@ def auto_bubble_nodes(layer, side, gap=None, step=None, tolerance=None,
     rows = scanned[0]
     if len(rows) < MIN_ROWS_TO_MEASURE:
         return None
-    profiles = kern_profiles(rows, layer.width, step)
+    profiles = kern_profiles(rows, layer.width, step,
+                             (scanned[1] + scanned[2]) / 2.0)
     if gap is None:
         gap = layer_gap(profiles)
     profile = profiles[side]

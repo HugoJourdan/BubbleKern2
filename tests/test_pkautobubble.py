@@ -870,11 +870,14 @@ def _stubMeasuring(monkeypatch):
 
     def scan(layer, step, skip_marks=True):
         scanned.append(layer.parent.name)
-        return ([0.0] * pk.MIN_ROWS_TO_MEASURE,)
+        # ROWS, THEN THE INK'S OWN EDGES, which is what the real one returns
+        # and what the caller halves to decide which side a row belongs to.
+        return ([0.0] * pk.MIN_ROWS_TO_MEASURE, 0.0, 100.0)
 
     monkeypatch.setattr(pk, "scan_layer", scan)
     monkeypatch.setattr(pk, "kern_profiles",
-                        lambda rows, width, step: {pk.LEFT: (1.0,), pk.RIGHT: (2.0,)})
+                        lambda rows, width, step, mid=None: {
+                            pk.LEFT: (1.0,), pk.RIGHT: (2.0,)})
     monkeypatch.setattr(pk, "layer_span", lambda layer, master: (0.0, 700.0))
     return scanned
 
@@ -1088,3 +1091,23 @@ def test_the_shape_road_is_still_the_default(monkeypatch):
     pk.auto_bubble_plan(font, SimpleNamespace(id="m1"), step=10, tolerance=5,
                         gap=20)
     assert asked == [1, 1], "one clustering a side"
+
+
+# --- Each side reads its own half of the box ---------------------------------
+
+
+def test_a_side_does_not_answer_for_ink_in_the_other_half():
+    """A row of a round-left, flat-right glyph up in the overshoot carries
+    nothing but the cap of the curve, which sits in the LEFT half. Read as the
+    right side's reach it drags the right wall in across rows the right side
+    has no ink on at all."""
+    rows = {0: (10.0, 90.0), 1: (20.0, 30.0)}  # row 1 is left-half only
+    profiles = pk.kern_profiles(rows, 100.0, 10, mid=50.0)
+    assert set(profiles[pk.RIGHT]) == {0}, 'the left-half row answered for the right'
+    assert set(profiles[pk.LEFT]) == {0, 1}, 'the left side lost its own row'
+
+
+def test_measuring_the_whole_row_is_still_what_no_middle_means():
+    rows = {0: (10.0, 90.0), 1: (20.0, 30.0)}
+    profiles = pk.kern_profiles(rows, 100.0, 10)
+    assert set(profiles[pk.RIGHT]) == {0, 1}
