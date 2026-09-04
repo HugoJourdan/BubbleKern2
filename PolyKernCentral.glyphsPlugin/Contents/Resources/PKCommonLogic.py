@@ -23,6 +23,23 @@ import math
 # WHAT A PERSON TYPES to mirror the other side. Glyphs' own metric keys spell
 # "the other side of this glyph" `=|`, and a bubble is a kind of sidebearing.
 MIRROR_TOKEN = '=|'
+
+
+def typedMirror(value):
+	"""The mirror key somebody typed, unpacked. -> str, '' or None
+
+	`''` for a bare `=|` - the other side of THIS glyph - and the glyph's name
+	for `=|A`, which is the same key with somewhere else to read from: `d` gets
+	its left wall from `b`'s right the way Glyphs' own `=|b` gets its left
+	sidebearing from there. `None` when what was typed is not a mirror key at
+	all, which is how a caller tells `=|` from an empty field.
+	"""
+	if not isinstance(value, str):
+		return None
+	text = value.strip()
+	if not text.startswith(MIRROR_TOKEN):
+		return None
+	return text[len(MIRROR_TOKEN):].strip()
 # A SIDE THAT KEEPS ITSELF. Typing this instead of a glyph name hands the side
 # back to the generator: it is drawn from the outline now and drawn again
 # whenever the outline moves, so it can never be left describing ink that has
@@ -139,31 +156,52 @@ def tempToUserNodeX(x, y, italicAngle, xHeight):
 # called from getFinalBubble()
 # def collectBubbleShapes(layer, theTransform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), depth=0) -> layerAttributes | None:
 def isReferenceValid(layer, side) -> bool:
-	# RETURNS True IF REFERENCE EXISTS IN FONT AND CAUSES NO CIRCULAR CHAIN.
+	# RETURNS True IF WHAT THIS SIDE POINTS AT EXISTS IN THE FONT AND CLOSES NO
+	# CIRCULAR CHAIN.
+	#
+	# TWO KINDS OF STEP, ONE WALK. A reference moves to another glyph and STAYS
+	# ON THIS SIDE; a `=|A` moves to another glyph AND CROSSES TO THE OTHER
+	# SIDE. So what has to be remembered is not a set of names but a set of
+	# SIDES: `d` left mirroring `b` right is a ring only when it comes back to
+	# `d`'s LEFT, and the same glyph's other side is somewhere the walk is
+	# perfectly entitled to be.
 	try:
-		gName = layer.userData.get(side.key('Refer'))
-		if not gName:
-			return True  # no reference is always valid
+		if not (layer.userData.get(side.key('Refer'))
+				or mirrorSource(layer, side.isLeft)):
+			return True  # pointing nowhere is always valid
 		font = layer.font()
 		if not font:
 			return False
 		mId = layer.associatedMasterId
-		visited = {layer.parent.name}
-		current_name = gName
-		while current_name:
-			if current_name in visited:
+		here, name, current = layer, layer.parent.name, side
+		visited = set()
+		while True:
+			if (name, str(current)) in visited:
 				return False  # circular reference
-			if not font.glyphs[current_name]:
-				return False  # glyph does not exist in font
-			visited.add(current_name)
-			current_layer = font.glyphs[current_name].layers[mId]
-			current_name = current_layer.userData.get(side.key('Refer')) or None
-		return True
+			visited.add((name, str(current)))
+			if isMirrored(here, current.isLeft):
+				nextName = mirrorSource(here, current.isLeft) or name
+				nextSide = current.other
+			else:
+				nextName = here.userData.get(current.key('Refer')) or None
+				if not nextName:
+					return True  # ends on a side that draws its own wall
+				nextSide = current
+			if nextName == name:
+				nextLayer = here  # the other side of this same glyph
+			else:
+				glyph = font.glyphs[nextName]
+				if not glyph:
+					return False  # glyph does not exist in font
+				nextLayer = glyph.layers[mId]
+				if nextLayer is None:
+					return False
+			here, name, current = nextLayer, nextName, nextSide
 	except Exception:
 		log(f'isReferenceValid error: {traceback.format_exc()}', error=True)
 		return False
 
-def borrowedTransform(borrower, lender, isLeft) -> tuple:
+def borrowedTransform(borrower, lender, isLeft, base=defaultTransform) -> tuple:
 	# HOW FAR A BORROWED WALL HAS TO MOVE TO SIT ON THE GLYPH BORROWING IT.
 	#
 	# A LEFT WALL IS STORED FROM THE ORIGIN AND A RIGHT ONE FROM THE ADVANCE,
@@ -179,17 +217,27 @@ def borrowedTransform(borrower, lender, isLeft) -> tuple:
 	# stem, which is what this is for. The difference of the two advances is
 	# the move. The left side is measured from an origin the two of them
 	# share, so it needs none.
+	#
+	# `isLeft` IS THE SIDE THE WALL ENDS UP ON, WHICH FOR A MIRROR IS NOT THE
+	# SIDE IT CAME FROM. Flipping `q`'s left about `q`'s own advance leaves it
+	# measured from that advance, so landing it on `p`'s right takes the same
+	# difference of advances as any other borrowed right wall - and a mirrored
+	# LEFT wall lands on the origin the two share and takes nothing, as usual.
+	#
+	# `base` IS A MOVE TO ADD THIS ONE TO, for the caller that has one already:
+	# a mirrored side inside a composite is carried by its component AND by the
+	# borrow. Both are translations, so they simply add.
 	try:
 		if isLeft:
-			return defaultTransform
+			return base
 		dx = float(borrower.width) - float(lender.width)
 		if not dx:
-			return defaultTransform
-		a, b, c, d, tx, ty = defaultTransform
+			return base
+		a, b, c, d, tx, ty = base
 		return (a, b, c, d, tx + dx, ty)
 	except Exception:
 		log(f'borrowedTransform error: {traceback.format_exc()}', error=True)
-		return defaultTransform
+		return base
 
 def isTranslationOnly(transform) -> bool:
 	# (a, b, c, d, tx, ty) WITH NOTHING BUT THE MOVE IN IT.
@@ -283,11 +331,21 @@ def gatherBubbleInfo(layer, theTransform=defaultTransform, refers=False, depth=0
 			# RESOLVED HERE, NOT ONLY IN getFinalBubble. A mirrored side stores
 			# nothing but the flag, so a composite reading its components for
 			# nodes would otherwise find none. See CLAUDE.md.
-			other = gatherBubbleInfo(layer, defaultTransform, False, depth,
+			# WHOSE OTHER SIDE, WHICH IS NOT ALWAYS THIS LAYER'S. `=|b` on
+			# the left of `d` reads `b`'s RIGHT wall, and everything below is
+			# told which glyph that is by being handed `b`'s LAYER: the flip is
+			# about the advance of whoever DREW the wall, and the move that
+			# follows carries it onto this glyph.
+			target = mirrorLayer(layer, isLeft)
+			if target is None or not isReferenceValid(layer, of(isLeft)):
+				return None  # names a glyph that is not there, or closes a ring
+			other = gatherBubbleInfo(target, defaultTransform, False, depth,
 				not isLeft)
 			if other is None:
 				return None
-			return layerAttributes(layer, theTransform, [other], True, depth, True)
+			return layerAttributes(target,
+				borrowedTransform(layer, target, isLeft, theTransform),
+				[other], True, depth, True)
 		f = layer.font()
 		m = layer.associatedFontMaster()
 
@@ -720,6 +778,44 @@ def isMirrored(layer, isLeft) -> bool:
 	if layer.userData[LEFT.key('Mirror')] and layer.userData[RIGHT.key('Mirror')]:
 		return False
 	return bool(layer.userData[of(isLeft).key('Mirror')])
+
+def mirrorSource(layer, isLeft):
+	# WHOSE OTHER SIDE THIS ONE MIRRORS, WHEN IT IS NOT THIS GLYPH'S. -> name
+	# or None.
+	#
+	# THE NAME LIVES IN THE FLAG, NOT IN `Refer`. A reference means THE SAME
+	# side all the way down - every walk over one would have had to learn that
+	# some of the names in it are flipped - and the flag has always meant "this
+	# side is resolved from somewhere else, live". `True` is what every mirror
+	# written before this stores, and it still means the obvious thing.
+	value = layer.userData[of(isLeft).key('Mirror')]
+	if isinstance(value, str) and value.strip():
+		return value.strip()
+	return None
+
+def mirrorLayer(layer, isLeft):
+	# THE LAYER WHOSE OTHER SIDE THIS SIDE IS. -> layer, or None.
+	#
+	# This layer for a plain `=|`. None when `=|A` names a glyph the font has
+	# not got - the same answer a broken reference gives: no wall, and a red
+	# field saying so.
+	try:
+		name = mirrorSource(layer, isLeft)
+		if not name:
+			return layer
+		font = layer.font()
+		glyph = font.glyphs[name] if font else None
+		if glyph is None:
+			return None
+		return glyph.layers[layer.associatedMasterId]
+	except Exception:
+		log(f'mirrorLayer error: {traceback.format_exc()}', error=True)
+		return None
+
+def mirrorsOwnSide(layer, isLeft) -> bool:
+	# A `=|` WITH NO NAME ON IT. The shape is the other side of THIS layer,
+	# live - the one thing a mirror can be that is not borrowed from elsewhere.
+	return isMirrored(layer, isLeft) and not mirrorSource(layer, isLeft)
 
 # SPLIT A PATH INTO ITS SUBPATHS AND MERGE THEM INTO ONE WALL.
 # THE MERGE ITSELF IS IN PKAutoBubble.union_walls, WHICH IS PURE AND TESTED;

@@ -16,7 +16,7 @@ import traceback
 import vanilla
 from GlyphsApp import Glyphs
 
-from PKCommonLogic import log
+from PKCommonLogic import log, MIRROR_TOKEN
 
 
 # Arrow keys step a numeric field, shift-arrow by ten. The field editor
@@ -87,12 +87,25 @@ try:
 				font = Glyphs.font
 				if not typed or font is None:
 					return ([], NOTHING_PICKED)
+				# A METRIC KEY IS A PREFIX ON A GLYPH NAME, and the field
+				# takes both: `=|b` is `b`'s other side. Whatever comes back
+				# replaces the WHOLE range the text system asked about, so the
+				# prefix has to go back on - and it is taken off what was typed
+				# rather than assumed, because a range that stopped at the `b`
+				# never had one and would get a second.
+				prefix = ''
+				for token in (MIRROR_TOKEN, '='):
+					if typed.startswith(token):
+						prefix, typed = token, typed[len(token):]
+						break
+				if not typed:
+					return ([], NOTHING_PICKED)
 				lowered = typed.lower()
-				names = [glyph.name for glyph in font.glyphs
+				names = [prefix + glyph.name for glyph in font.glyphs
 					if glyph.name and glyph.name.lower().startswith(lowered)]
 				# WHAT WAS TYPED, AS TYPED, FIRST - then shortest, so `a` offers `a`
 				# before `aacute` and never buries the letter under its accents.
-				names.sort(key=lambda name: (not name.startswith(typed),
+				names.sort(key=lambda name: (not name.startswith(prefix + typed),
 						len(name), name))
 				return (names[:GLYPH_COMPLETIONS], NOTHING_PICKED)
 			except Exception:

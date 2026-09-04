@@ -335,3 +335,53 @@ def test_a_borrowed_left_wall_stays_where_it_was_drawn():
 	m = Layer('m', 900, paths=1)
 	built = wall(pk.getFinalBubble(_pointedAt(m, n, isLeft=True), isLeft=True))
 	assert built and all(x == pytest.approx(90) for x, y in built), built
+
+
+# --- A side that mirrors ANOTHER glyph's ------------------------------------
+# `=|A`, which is Glyphs' own metric key for the other side of another glyph.
+# The wall is flipped about the advance of whoever DREW it and then moved onto
+# the glyph wearing it, and those two do not commute.
+
+
+def _mirroring(borrower, lender, isLeft=True):
+	borrower.userData['PolyKernMirror' + ('L' if isLeft else 'R')] = \
+			lender.parent.name
+	Font(borrower, lender)
+	return borrower
+
+
+def test_a_mirrored_left_side_is_the_lenders_right_flipped():
+	"""`d` left set to `=|b`: 90 in from b's advance becomes 90 out from d's
+	origin, whatever the two advances are."""
+	b = Layer('b', 600, nodesR=[(-90, 0), (-90, 500)], paths=1)
+	d = Layer('d', 900, paths=1)
+	built = wall(pk.getFinalBubble(_mirroring(d, b), isLeft=True))
+	assert built and all(x == pytest.approx(90) for x, y in built), built
+
+
+def test_a_mirrored_right_side_lands_against_the_borrowers_advance():
+	"""The other way round, and the difference of the advances is the move:
+	flipped about the lender's 600 the wall sits at 510, and 510 is 90 inside
+	the LENDER - the middle of the borrower."""
+	q = Layer('q', 600, nodesL=[(90, 0), (90, 500)], paths=1)
+	p = Layer('p', 900, paths=1)
+	built = wall(pk.getFinalBubble(_mirroring(p, q, isLeft=False), isLeft=False))
+	assert built and all(x == pytest.approx(810) for x, y in built), built
+
+
+def test_a_mirror_of_a_glyph_that_is_not_there_says_nothing():
+	d = Layer('d', 900, paths=1)
+	d.userData['PolyKernMirrorL'] = 'nosuchglyph'
+	Font(d)
+	assert pk.gatherBubbleInfo(d, isLeft=True) is None
+
+
+def test_two_glyphs_mirroring_each_other_are_a_ring():
+	"""`d` left from `b` right, `b` right from `d` left: nothing at either end
+	of it, and followed it recurses until Python gives up."""
+	b = Layer('b', 600, paths=1)
+	d = Layer('d', 600, paths=1)
+	Font(b, d)
+	d.userData['PolyKernMirrorL'] = 'b'
+	b.userData['PolyKernMirrorR'] = 'd'
+	assert pk.gatherBubbleInfo(d, isLeft=True) is None

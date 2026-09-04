@@ -48,7 +48,7 @@ from Foundation import NSMakeSize  # to size the toolbar icon
 
 from typing import Self
 
-from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, hasInk, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
+from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, hasInk, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN, typedMirror, mirrorSource, mirrorsOwnSide
 import PKAutoBubble as auto
 import PKPreview as preview
 from PKGroupGrid import PKGroupGridView
@@ -758,8 +758,9 @@ class PolyKernTool(SelectTool):
 
 			for side, field in zip(SIDES, fields):
 				if isMirrored(layer, side.isLeft):
-					# A MIRRORED SIDE READS BACK AS WHAT WAS TYPED TO MAKE IT ONE.
-					field.set(MIRROR_TOKEN)
+					# A MIRRORED SIDE READS BACK AS WHAT WAS TYPED TO MAKE IT
+					# ONE, THE GLYPH INCLUDED WHEN IT IS NOT THIS GLYPH.
+					field.set(MIRROR_TOKEN + (mirrorSource(layer, side.isLeft) or ''))
 					continue
 				if isAuto(layer, side.isLeft):
 					field.set(AUTO_TOKEN)
@@ -852,9 +853,11 @@ class PolyKernTool(SelectTool):
 		if layer is None:
 			return
 		for side, field in zip(SIDES, (self.w.group.glyphNameL, self.w.group.glyphNameR)):
-			gName = layer.userData.get(side.key('Refer')) or None
+			# A MIRROR NAMES A GLYPH TOO, AND CAN NAME ONE THAT IS NOT THERE.
+			pointsAt = (layer.userData.get(side.key('Refer'))
+					or mirrorSource(layer, side.isLeft) or None)
 			tf = field.getNSTextField()
-			if gName and not isReferenceValid(layer, side):
+			if pointsAt and not isReferenceValid(layer, side):
 				tf.setTextColor_(NSColor.systemRedColor())
 			else:
 				tf.setTextColor_(NSColor.textColor())
@@ -899,12 +902,23 @@ class PolyKernTool(SelectTool):
 					value = value.strip()
 				if not value:
 					value = None
-				if value == MIRROR_TOKEN:
-					# THE OTHER SIDE OF THIS GLYPH, spelled the way Glyphs'
-					# metric keys spell it. Everything a mirror needs undoing
-					# or clearing is in syncBubble already.
-					self.syncBubble(side.isLeft, layers=[layer])
+				mirrors = typedMirror(value)
+				if mirrors is not None:
+					# THE OTHER SIDE, spelled the way Glyphs' metric keys spell
+					# it: `=|` for this glyph's own and `=|A` for A's, which is
+					# the same relation between the same two glyphs that `=|A`
+					# in a sidebearing field already means. Everything a mirror
+					# needs undoing or clearing is in syncBubble already.
+					self.syncBubble(side.isLeft, layers=[layer], source=mirrors or None)
 					continue
+				if isinstance(value, str) and value.startswith('='):
+					# `=A` IS GLYPHS' OTHER METRIC KEY - the SAME side of A -
+					# and that is what a PolyKern group already is, so it is
+					# taken as the name it names. Nothing is ambiguous about it:
+					# no glyph is called `=A`, and somebody arriving from the
+					# spacing fields should not have to learn that this one
+					# field wants the name bare.
+					value = value[1:].strip() or None
 				if isinstance(value, str) and value.lower() == AUTO_TOKEN:
 					self.setAuto(side.isLeft, layer)
 					continue
@@ -1037,19 +1051,21 @@ class PolyKernTool(SelectTool):
 			# would put the handles on a line that is not the wall being drawn.
 			# Take the wall it actually resolves to, so what can be grabbed is
 			# what can be seen. Nothing to borrow from still falls through.
-			# BORROWED FROM ANOTHER GLYPH, WHICH A MIRRORED SIDE IS NOT. A mirror
-			# owns no nodes either, but what it resolves to is the OTHER SIDE OF
-			# THIS LAYER, live - which is exactly what a drag is moving. Recorded
-			# here it went out of date on the first pixel of every drag on the
-			# other side, dropped the cache, and took the drag with it.
+			# BORROWED FROM ANOTHER GLYPH, WHICH A BARE `=|` IS NOT. A mirror
+			# owns no nodes either, but what a bare one resolves to is the OTHER
+			# SIDE OF THIS LAYER, live - which is exactly what a drag is moving.
+			# Recorded here it went out of date on the first pixel of every drag
+			# on the other side, dropped the cache, and took the drag with it.
+			# A `=|A` IS BORROWED LIKE ANY OTHER: the wall belongs to A, nothing
+			# happening on this layer moves it, and it should read as borrowed.
 			borrowed = {}
 			if not nodesL:
 				nodesL = store.nodesFromFinalBubble(layer, True) or nodesL
-				if nodesL and not isMirrored(layer, True):
+				if nodesL and not mirrorsOwnSide(layer, True):
 					borrowed[LEFT] = nodesL
 			if not nodesR:
 				nodesR = store.nodesFromFinalBubble(layer, False) or nodesR
-				if nodesR and not isMirrored(layer, False):
+				if nodesR and not mirrorsOwnSide(layer, False):
 					borrowed[RIGHT] = nodesR
 
 			# if no bubbles present, make up one and save to Temp Data (not User)
@@ -2123,13 +2139,14 @@ class PolyKernTool(SelectTool):
 			log(f'autoGenerate error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
-	def syncBubble(self, isLeft, layers=None):
+	def syncBubble(self, isLeft, layers=None, source=None):
 		try:
 			font = Glyphs.font
 			if font is None:
 				return
-			done, side, other = store.syncBubble(font, isLeft, layers)
-			report(f'{done} {side} side(s) now sync from {other}')
+			done, side, other = store.syncBubble(font, isLeft, layers, source)
+			report(f'{done} {side} side(s) now sync from {other}'
+				+ (f' of {source}' if source else ''))
 			self.refreshAfterWrite()
 		except Exception:
 			log(f'syncBubble error: {traceback.format_exc()}', error=True)

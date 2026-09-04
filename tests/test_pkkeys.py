@@ -74,6 +74,12 @@ class Glyph:
 		pass
 
 
+class Glyphs(dict):
+	# Glyphs hands back None for a name it has not got; a plain dict raises.
+	def __missing__(self, key):
+		return None
+
+
 class Font:
 	"""Just enough font for `isReferenceValid` to walk a reference chain."""
 
@@ -101,7 +107,7 @@ class Layer:
 
 def _pair():
 	"""A layer and the glyph it can legitimately refer to."""
-	glyphs = {}
+	glyphs = Glyphs()
 	font = Font(glyphs)
 	layer = Layer('a', font)
 	target = Layer('o', font)
@@ -195,3 +201,81 @@ def test_no_writer_invents_a_key_outside_the_known_six():
 		touched |= set(layer.userData.set) | set(layer.userData.deleted)
 	assert touched, 'the fakes recorded nothing, so this proves nothing'
 	assert touched <= allowed, f'unknown keys: {sorted(touched - allowed)}'
+
+
+# --- The key a person types -------------------------------------------------
+
+
+@pytest.mark.parametrize('typed, expected', [
+	('=|', ''),          # this glyph's own other side
+	('=|A', 'A'),        # A's other side
+	(' =| A ', 'A'),     # typed with the spaces a person leaves
+	('=A', None),        # the SAME side of A: a reference, not a mirror
+	('A', None),
+	('', None),
+	(None, None),
+])
+def test_what_counts_as_a_mirror_key(typed, expected):
+	assert logic.typedMirror(typed) == expected
+
+
+def test_mirroring_another_glyph_stores_the_name_in_the_flag(side):
+	"""`=|A` still stores nothing but the flag - the name IS the flag - so
+	there is one question to ask about a side that is resolved from elsewhere
+	and one place the answer lives."""
+	layer = Layer()
+	store.syncBubble(None, side.isLeft, layers=[layer], source='o')
+	assert layer.userData[side.key('Mirror')] == 'o'
+	assert layer.userData.set == [side.key('Mirror')], 'wrote something else'
+	assert layer.userData[side.key('Refer')] is None, 'a mirror is not a reference'
+
+
+def test_a_bare_mirror_is_still_the_flag_alone(side):
+	layer = Layer()
+	store.syncBubble(None, side.isLeft, layers=[layer])
+	assert layer.userData[side.key('Mirror')] is True
+
+
+def test_the_name_in_the_flag_is_what_the_side_reads_from(side):
+	layer = Layer()
+	assert logic.mirrorSource(layer, side.isLeft) is None
+	layer.userData[side.key('Mirror')] = True
+	assert logic.mirrorSource(layer, side.isLeft) is None, 'its own other side'
+	assert logic.mirrorsOwnSide(layer, side.isLeft) is True
+	layer.userData[side.key('Mirror')] = 'o'
+	assert logic.mirrorSource(layer, side.isLeft) == 'o'
+	assert logic.mirrorsOwnSide(layer, side.isLeft) is False
+
+
+# --- Where a mirror is allowed to point ------------------------------------
+
+
+def test_a_mirror_of_another_glyph_is_valid(side):
+	layer, _target = _pair()
+	layer.userData[side.key('Mirror')] = 'o'
+	assert logic.isReferenceValid(layer, side) is True
+
+
+def test_a_mirror_of_a_glyph_that_is_not_there_is_not(side):
+	layer, _target = _pair()
+	layer.userData[side.key('Mirror')] = 'nosuchglyph'
+	assert logic.isReferenceValid(layer, side) is False
+
+
+def test_two_glyphs_mirroring_each_other_close_a_ring(side):
+	"""A mirror step crosses to the OTHER side, so a ring here is not a
+	repeated name - `a` left and `a` right are two different places - it is a
+	repeated SIDE."""
+	layer, target = _pair()
+	layer.userData[side.key('Mirror')] = 'o'
+	target.userData[side.other.key('Mirror')] = 'a'
+	assert logic.isReferenceValid(layer, side) is False
+
+
+def test_a_mirror_pointing_at_a_side_that_draws_its_own_is_fine(side):
+	"""The same two glyphs, but `o` draws the side `a` mirrors: the walk ends
+	there, which is what makes it a chain rather than a ring."""
+	layer, target = _pair()
+	layer.userData[side.key('Mirror')] = 'o'
+	target.userData[side.other.key('Nodes')] = [(0, 0), (0, 700)]
+	assert logic.isReferenceValid(layer, side) is True

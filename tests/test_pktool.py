@@ -49,6 +49,11 @@ class UserData(dict):
 	def __missing__(self, key):
 		return None
 
+	def __delitem__(self, key):
+		# Glyphs' userData does not mind a key that was never set; a plain
+		# dict raises, and the code under test deletes unguarded in places.
+		dict.pop(self, key, None)
+
 
 class Glyph:
 	def __init__(self, name, layer):
@@ -823,3 +828,50 @@ def test_the_question_is_gone_from_the_source(tool):
 	text = (RESOURCES / 'PKTool.py').read_text()
 	assert 'Starting PolyKern' not in text
 	assert 'please reopen the file' not in text
+
+
+# --- What typing in the group fields means ---------------------------------
+
+
+class Typed:
+	"""One of the two group fields, holding what somebody typed into it."""
+
+	def __init__(self, text=''):
+		self._text = text
+
+	def get(self):
+		return self._text
+
+
+def _fields(tool, left='', right=''):
+	"""The two fields in the tool's hand, and a note of what it syncs."""
+	tool.w = SimpleNamespace(group=SimpleNamespace(
+			glyphNameL=Typed(left), glyphNameR=Typed(right)))
+	calls = []
+	tool.syncBubble = lambda isLeft, layers=None, source=None: \
+			calls.append((isLeft, source))
+	return calls
+
+
+def test_typing_a_mirror_key_with_a_glyph_on_it_names_that_glyph(tool, oh):
+	o, accent, ocirc = oh
+	calls = _fields(tool, left='=|b')
+	tool.saveInfoToLayer(o)
+	assert calls == [(True, 'b')]
+	assert o.userData['PolyKernReferL'] is None, 'a mirror is not a reference'
+
+
+def test_typing_a_bare_mirror_key_still_means_this_glyph(tool, oh):
+	o, accent, ocirc = oh
+	calls = _fields(tool, right='=|')
+	tool.saveInfoToLayer(o)
+	assert calls == [(False, None)]
+
+
+def test_an_equals_key_is_the_glyph_it_names(tool, oh):
+	"""`=o` is Glyphs' key for the SAME side of `o`, which is what a PolyKern
+	group already is: taken as the name, not stored with the sign on it."""
+	o, accent, ocirc = oh
+	_fields(tool, left='=o')
+	tool.saveInfoToLayer(accent)
+	assert accent.userData['PolyKernReferL'] == 'o'

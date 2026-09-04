@@ -563,12 +563,16 @@ def autoGenerate(font, isLeft, layers=None, skipExisting=False):
 	return done, merged, skipped
 
 
-def syncBubble(font, isLeft, layers=None):
+def syncBubble(font, isLeft, layers=None, source=None):
 	"""One side becomes the live mirror of the other. -> (done, side, other)
 
 	NOTHING IS COPIED: the flag is all that is stored, and `getFinalBubble`
 	resolves the shape from the other side every time - including from tempData
 	mid-drag, so the synced wall follows the node you are holding.
+
+	`source` NAMES THE GLYPH TO MIRROR WHEN IT IS NOT THIS ONE - what `=|A`
+	types - and it goes IN THE FLAG, so that "this side is resolved from
+	somewhere else" stays one question with one answer wherever it is asked.
 	"""
 	side = of(isLeft)
 	other = side.other
@@ -577,7 +581,7 @@ def syncBubble(font, isLeft, layers=None):
 		glyph = layer.parent
 		glyph.beginUndo()
 		try:
-			layer.userData[side.key('Mirror')] = True
+			layer.userData[side.key('Mirror')] = source or True
 			# THE THREE WAYS A SIDE CAN GET ITS SHAPE ARE EXCLUSIVE.
 			for dead in (other.key('Mirror'), side.key('Refer'), side.key('Nodes')):
 				if layer.userData[dead]:
