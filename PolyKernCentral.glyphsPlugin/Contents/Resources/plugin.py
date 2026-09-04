@@ -8,3 +8,4 @@
 
 from PKKerner import PolyKernKerner
 from PKTool import PolyKernTool
+from PKPairsPreview import PolyKernPairs
