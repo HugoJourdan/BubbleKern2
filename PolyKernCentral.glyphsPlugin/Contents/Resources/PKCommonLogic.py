@@ -163,6 +163,34 @@ def isReferenceValid(layer, side) -> bool:
 		log(f'isReferenceValid error: {traceback.format_exc()}', error=True)
 		return False
 
+def borrowedTransform(borrower, lender, isLeft) -> tuple:
+	# HOW FAR A BORROWED WALL HAS TO MOVE TO SIT ON THE GLYPH BORROWING IT.
+	#
+	# A LEFT WALL IS STORED FROM THE ORIGIN AND A RIGHT ONE FROM THE ADVANCE,
+	# and buildBubble makes both absolute against the layer that DREW them.
+	# For a COMPONENT that is exactly right: the component's own transform
+	# then carries the wall into place.
+	#
+	# A REFERENCE HAS NO SUCH TRANSFORM. `m` pointing its right side at `n` is
+	# not an `n` sitting somewhere inside `m` - nothing else in the layer says
+	# where that wall belongs. So a right wall borrowed from a narrower glyph
+	# was built against the LENDER's advance and stood that much inside the
+	# borrower: `m` wearing `n`'s right wall across the middle of its last
+	# stem, which is what this is for. The difference of the two advances is
+	# the move. The left side is measured from an origin the two of them
+	# share, so it needs none.
+	try:
+		if isLeft:
+			return defaultTransform
+		dx = float(borrower.width) - float(lender.width)
+		if not dx:
+			return defaultTransform
+		a, b, c, d, tx, ty = defaultTransform
+		return (a, b, c, d, tx + dx, ty)
+	except Exception:
+		log(f'borrowedTransform error: {traceback.format_exc()}', error=True)
+		return defaultTransform
+
 def isTranslationOnly(transform) -> bool:
 	# (a, b, c, d, tx, ty) WITH NOTHING BUT THE MOVE IN IT.
 	try:
@@ -260,7 +288,11 @@ def gatherBubbleInfo(layer, theTransform=defaultTransform, refers=False, depth=0
 				# THE SAME SIDE, ALL THE WAY DOWN. Left out, `isLeft` falls back to
 				# its default and every chain is followed along the LEFT. See
 				# CLAUDE.md.
-				children.append(gatherBubbleInfo(referredLayer, defaultTransform,
+				# AND MOVED OUT TO THIS LAYER'S ADVANCE, which a component gets
+				# from its own transform and a reference has nothing to get
+				# from. See `borrowedTransform`.
+				children.append(gatherBubbleInfo(referredLayer,
+					borrowedTransform(layer, referredLayer, isLeft),
 					False, depth + 1, isLeft))
 		else:  # reference doesn't exist; look for components
 			if len(layer.paths) == 0 and len(layer.components) > 0:

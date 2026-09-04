@@ -43,14 +43,36 @@ class UserData(dict):
 		return None
 
 
+class Layers(list):
+	# Glyphs indexes a glyph's layers by master id as well as by position, and
+	# a reference is resolved that way: `font.glyphs[name].layers[masterId]`.
+	def __getitem__(self, key):
+		if isinstance(key, str):
+			return next((l for l in self if l.associatedMasterId == key), None)
+		return list.__getitem__(self, key)
+
+
 class Glyph:
 	def __init__(self, name, layer):
 		self.name = name
-		self.layers = [layer]
+		self.layers = Layers([layer])
+
+
+class Font:
+	"""Enough font for a reference to be resolved through. Attaches itself to
+	the layers it is given, which is how `layer.font()` finds it."""
+
+	def __init__(self, *layers):
+		self.glyphs = UserData(
+				(layer.parent.name, layer.parent) for layer in layers)
+		for layer in layers:
+			layer.owner = self
 
 
 class Layer:
 	isMasterLayer = True
+	associatedMasterId = MASTER.id
+	owner = None
 
 	def __init__(self, name, width, nodesL=None, nodesR=None, paths=0,
 			components=()):
@@ -66,7 +88,7 @@ class Layer:
 		self.parent = Glyph(name, self)
 
 	def font(self):
-		return None
+		return self.owner
 
 	def associatedFontMaster(self):
 		return MASTER
@@ -279,3 +301,37 @@ def test_a_mirrored_side_on_a_component_still_reaches_the_composite(oh):
 	assert above, 'the accent is part of the wall'
 	# Its left wall flipped about its OWN advance, then moved to where it sits.
 	assert max(x for x, y in above) == pytest.approx(ACCENT_WIDTH - 7 + ACCENT_DX)
+
+
+# --- A borrowed wall sits on the glyph borrowing it --------------------------
+# `m` pointing its right side at `n` is not an `n` sitting somewhere inside
+# `m`: there is no transform saying where the wall goes, the way a component
+# carries one. Read against the lender's advance, a borrowed right wall stands
+# that much inside the borrower.
+
+
+def _pointedAt(borrower, lender, isLeft=False):
+	borrower.userData['PolyKernRefer' + ('L' if isLeft else 'R')] = \
+			lender.parent.name
+	Font(borrower, lender)
+	return borrower
+
+
+def test_a_borrowed_right_wall_moves_out_to_the_borrowers_advance():
+	"""`m` wearing `n`'s right side, and `m` is 300 units the wider."""
+	n = Layer('n', 600, nodesR=[(-90, 0), (-90, 500)], paths=1)
+	m = Layer('m', 900, paths=1)
+	built = wall(pk.getFinalBubble(_pointedAt(m, n), isLeft=False))
+	assert built, 'no wall at all'
+	# 90 in from 900, not 90 in from 600 - which is the middle of the last stem.
+	assert all(x == pytest.approx(810) for x, y in built), built
+
+
+def test_a_borrowed_left_wall_stays_where_it_was_drawn():
+	"""The left is measured from an origin the two of them share, so there is
+	nothing to move it by - and moving it would break every `n`/`m` pair that
+	borrows the side they genuinely have in common."""
+	n = Layer('n', 600, nodesL=[(90, 0), (90, 500)], paths=1)
+	m = Layer('m', 900, paths=1)
+	built = wall(pk.getFinalBubble(_pointedAt(m, n, isLeft=True), isLeft=True))
+	assert built and all(x == pytest.approx(90) for x, y in built), built
