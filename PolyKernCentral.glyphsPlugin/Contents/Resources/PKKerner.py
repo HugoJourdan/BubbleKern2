@@ -530,10 +530,20 @@ class PolyKernKerner(GeneralPlugin):
 			# grid that shows what it did.
 			pane.autoButton = vanilla.Button(
 				(-self.AUTO_BUTTON_W - 15, 10, self.AUTO_BUTTON_W, 20),
-				'Set PolyKern Groups Automatically…', sizeStyle='small',
+				self.AUTO_TITLE, sizeStyle='small',
 				callback=self.setPolyKernGroups)
 			pane.caption = vanilla.TextBox(
 				(15, 12, -self.AUTO_BUTTON_W - 30, 32), '', sizeStyle='small')
+			# AND THE SAME COMMAND AGAIN, FOR WHEN THERE IS NOTHING TO SHOW.
+			# A caption and a button along the top of an empty window are two
+			# things floating over the nothing they are describing; in the
+			# middle of it, with the command under the sentence that asks for
+			# it, they are the content rather than a header for absent content.
+			pane.blankCaption = vanilla.TextBox((0, 0, self.BLANK_TEXT_W, 60),
+				'', alignment='center')
+			pane.blankButton = vanilla.Button(
+				(0, 0, self.BLANK_BUTTON_W, 20), self.AUTO_TITLE,
+				callback=self.setPolyKernGroups)
 			# THE WIDTH IS A PLACEHOLDER. The scroll view sets its document
 			# view's width, and the grid lays itself out again when it does.
 			grid = PKGroupGridView.alloc().initWithFrame_(NSMakeRect(0, 0, 800, 1))
@@ -541,12 +551,65 @@ class PolyKernKerner(GeneralPlugin):
 			self.groupGrid = grid
 			pane.groups = vanilla.ScrollView((0, 52, 0, 0), grid,
 				hasHorizontalScroller=False)
+			self.centreBlankState(pane)
 		except Exception:
 			log(f'buildGroupsPane error: {traceback.format_exc()}', error=True)
 
 	# WIDE ENOUGH FOR ITS OWN TITLE. A vanilla Button truncates rather than
-	# growing, and a truncated command is one nobody presses.
-	AUTO_BUTTON_W = 230
+	# growing, and a truncated command is one nobody presses. Measured, both
+	# of them: 195 points for the small one and 227 for the big.
+	AUTO_TITLE = 'Auto-generate PolyKern Groups'
+	AUTO_BUTTON_W = 205
+	BLANK_BUTTON_W = 235
+	# THE BUTTON'S OWN HEIGHT AT REGULAR SIZE, which is what vanilla makes of
+	# one whatever height it is given, and the air between it and the sentence.
+	BLANK_BUTTON_H = 32
+	BLANK_GAP = 16
+	# NARROW ENOUGH TO BREAK INTO A FEW LINES. One long line across a wide
+	# window is a line nobody's eye can get back to the start of.
+	BLANK_TEXT_W = 420
+
+	@objc.python_method
+	def centreBlankState(self, pane):
+		"""Sit the empty state in the middle of the pane, command underneath.
+
+		BY CONSTRAINTS, NOT posSize. The middle of a pane moves every time the
+		window is dragged and posSize is set once, so this is the one thing
+		here that cannot be placed the way the rest of the pane is.
+
+		THE PAIR IS CENTRED, NOT THE SENTENCE. Centring the sentence and
+		hanging the button off it puts the two of them low, by half the
+		button; lifting the sentence by half of what is under it puts the
+		BLOCK in the middle, whatever height the sentence turns out to be -
+		which is the thing that cannot be measured here, since it depends on
+		how the words break.
+		"""
+		try:
+			caption = pane.blankCaption.getNSTextField()
+			button = pane.blankButton.getNSButton()
+			# WRAPPING, AND TOLD WHERE TO WRAP. Auto layout asks a text field
+			# how tall it wants to be, and one that does not know its own
+			# width answers "one line".
+			caption.cell().setWraps_(True)
+			caption.setPreferredMaxLayoutWidth_(self.BLANK_TEXT_W)
+			view = pane.getNSView()
+			for control in (caption, button):
+				control.setTranslatesAutoresizingMaskIntoConstraints_(False)
+			NSLayoutConstraint.activateConstraints_([
+				caption.centerXAnchor().constraintEqualToAnchor_(
+					view.centerXAnchor()),
+				caption.widthAnchor().constraintEqualToConstant_(
+					self.BLANK_TEXT_W),
+				caption.centerYAnchor().constraintEqualToAnchor_constant_(
+					view.centerYAnchor(),
+					-(self.BLANK_GAP + self.BLANK_BUTTON_H) / 2.0),
+				button.centerXAnchor().constraintEqualToAnchor_(
+					view.centerXAnchor()),
+				button.topAnchor().constraintEqualToAnchor_constant_(
+					caption.bottomAnchor(), self.BLANK_GAP),
+			])
+		except Exception:
+			log(f'centreBlankState error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def setPolyKernGroups(self, sender=None):
@@ -562,7 +625,7 @@ class PolyKernKerner(GeneralPlugin):
 			if tool is None:
 				# THE TOOL IS A SEPARATE PRINCIPAL CLASS of this bundle and may
 				# not have been made yet.
-				PKCommonLogic.show_alert('Set PolyKern Groups Automatically',
+				PKCommonLogic.show_alert(self.AUTO_TITLE,
 					'The PolyKern tool has not loaded yet. Pick it in the '
 					'toolbar once, then try again.', cancel=False)
 				return
@@ -574,9 +637,9 @@ class PolyKernKerner(GeneralPlugin):
 	def groupsCaption(self, groups) -> str:
 		"""What the grid below adds up to, in words. -> str"""
 		if not groups:
-			return ('No glyph borrows a wall from another one in this master. '
-				'Put a glyph name in a side\u2019s PolyKern Group field, or run Set '
-				'PolyKern Groups Automatically, and the groups appear here.')
+			return ('No glyph borrows a wall from another one in this master.\n\n'
+				'Put a glyph name in a side\u2019s PolyKern Group field, or '
+				'auto-generate them below, and the groups appear here.')
 		# ACROSS BOTH SIDES: a glyph can be in a left group and a right one,
 		# and it is still one glyph.
 		glyphs = len({name for group in groups for name in group['members']})
@@ -584,6 +647,19 @@ class PolyKernKerner(GeneralPlugin):
 			f'{glyphs} glyph{"" if glyphs == 1 else "s"}. Each band is one wall '
 			'shared by everything in it, and the first cell is the glyph the '
 			'rest of them borrow it from.')
+
+	@objc.python_method
+	def showBlankState(self, said, blank):
+		"""Put the sentence in the middle of the pane, or along the top of it."""
+		try:
+			pane = self.w.groupsPane
+			for control in (pane.caption, pane.autoButton, pane.groups):
+				control.show(not blank)
+			for control in (pane.blankCaption, pane.blankButton):
+				control.show(blank)
+			(pane.blankCaption if blank else pane.caption).set(said)
+		except Exception:
+			log(f'showBlankState error: {traceback.format_exc()}', error=True)
 
 	@objc.python_method
 	def fitGroupGrid(self):
@@ -618,12 +694,17 @@ class PolyKernKerner(GeneralPlugin):
 			font = Glyphs.font or self.font
 			master = font.selectedFontMaster if font is not None else None
 			if font is None or master is None:
+				groups = []
 				grid.setGroups([], font, None)
-				self.w.groupsPane.caption.set('Open a font to see its groups.')
+				said = 'Open a font to see its groups.'
 			else:
 				groups = store.referGroups(font, master.id)
 				grid.setGroups(groups, font, master.id)
-				self.w.groupsPane.caption.set(self.groupsCaption(groups))
+				said = self.groupsCaption(groups)
+			# NOTHING TO SHOW MEANS NOTHING ALONG THE TOP EITHER: the strip is
+			# a heading for the grid, and with no grid under it there is
+			# nothing for it to head.
+			self.showBlankState(said, not groups)
 			grid.setNeedsDisplay_(True)
 		except Exception:
 			log(f'refreshGroups error: {traceback.format_exc()}', error=True)

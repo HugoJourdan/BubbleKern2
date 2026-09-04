@@ -922,7 +922,7 @@ def test_the_two_buttons_are_centred_under_it(exportSheet):
 def test_the_groups_pane_offers_the_command(window):
 	plugin, _ = window
 	button = plugin.w.groupsPane.autoButton
-	assert button.getTitle() == 'Set PolyKern Groups Automatically…'
+	assert button.getTitle() == 'Auto-generate PolyKern Groups'
 
 
 def test_the_button_is_wide_enough_for_its_own_title(window):

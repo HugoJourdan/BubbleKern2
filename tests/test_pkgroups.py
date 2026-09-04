@@ -195,7 +195,7 @@ def test_one_side_can_be_asked_for_on_its_own():
 
 def test_an_empty_font_is_told_what_to_do_about_it():
 	said = kerner.PolyKernKerner.groupsCaption(None, [])
-	assert 'PolyKern Group' in said and 'Automatically' in said
+	assert 'PolyKern Group' in said and 'auto-generate' in said
 
 
 def test_the_caption_counts_the_bands_and_the_glyphs():
