@@ -357,6 +357,26 @@ def drawPreviewLine(line, originX, originY, scale, top, bottom,
 	baseline.setLineWidth_(1.0)
 	baseline.stroke()
 
+	# WHAT THE KERN TOOK OUT: the strip between where the next glyph now
+	# starts and where it would have.
+	#
+	# BEHIND THE TYPE, NOT OVER IT. The band is a wash, and a wash laid over
+	# the letters puts a magenta film across the one seam a person is looking
+	# at - the type is what is being judged and it has to stay the colour it
+	# is. Underneath, the band still shows everywhere it is not covered,
+	# which is exactly the gap it is describing.
+	#
+	# ONLY WITH THE BUBBLES HIDDEN. The band and the two walls it lies between
+	# are the same fact drawn twice.
+	if kerned and not showWalls:
+		NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 0.0, 1.0, 0.2).set()
+		for index, value in enumerate(kerns):
+			if -value >= 0:  # only a tightening removes anything
+				continue
+			NSBezierPath.fillRect_(NSMakeRect(
+				originX + positions[index + 1] * scale, originY + bottom * scale,
+				abs(value) * scale, (top - bottom) * scale))
+
 	for index, layer in enumerate(line['layers']):
 		transform = NSAffineTransform.transform()
 		transform.translateXBy_yBy_(originX + positions[index] * scale, originY)
@@ -379,20 +399,6 @@ def drawPreviewLine(line, originX, originY, scale, top, bottom,
 
 	if not kerned:
 		return
-	# WHAT THE KERN TOOK OUT, over the type rather than beside it: the strip
-	# between where the next glyph now starts and where it would have.
-	#
-	# ONLY WITH THE BUBBLES HIDDEN. The band and the two walls it lies between
-	# are the same fact drawn twice, and drawn together the band is a magenta
-	# wash over the one seam a person is trying to look at.
-	if not showWalls:
-		NSColor.colorWithSRGBRed_green_blue_alpha_(1.0, 0.0, 1.0, 0.2).set()
-		for index, value in enumerate(kerns):
-			if -value >= 0:  # only a tightening removes anything
-				continue
-			NSBezierPath.fillRect_(NSMakeRect(
-				originX + positions[index + 1] * scale, originY + bottom * scale,
-				abs(value) * scale, (top - bottom) * scale))
 
 	labelY = kernLabelY(originY + bottom * scale)
 	lastRight = None
