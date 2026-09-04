@@ -2386,8 +2386,12 @@ class PolyKernTool(SelectTool):
 				scanned = auto.scan_layer(layer, step, skip_marks=True)
 				if scanned is None or len(scanned[0]) < auto.MIN_ROWS_TO_MEASURE:
 					continue
-				profiles[name] = auto.kern_profiles(scanned[0], layer.width, step,
+				measured = auto.kern_profiles(scanned[0], layer.width, step,
 					(scanned[1] + scanned[2]) / 2.0)
+				lowEdge, highEdge = auto.zone_edges(layer, master)
+				profiles[name] = {side: auto.hold_through_overshoot(
+						profile, scanned[0], step, lowEdge, highEdge)
+					for side, profile in measured.items()}
 				low_y, high_y = auto.layer_span(layer, master)
 				geometry[name] = (low_y, high_y, layer.width)
 

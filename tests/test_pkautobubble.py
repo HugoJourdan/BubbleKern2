@@ -879,6 +879,11 @@ def _stubMeasuring(monkeypatch):
                         lambda rows, width, step, mid=None: {
                             pk.LEFT: (1.0,), pk.RIGHT: (2.0,)})
     monkeypatch.setattr(pk, "layer_span", lambda layer, master: (0.0, 700.0))
+    # The profiles above are stand-ins, not dicts of rows; nothing here is
+    # about what the overshoot does to them.
+    monkeypatch.setattr(pk, "zone_edges", lambda layer, master: (0.0, 700.0))
+    monkeypatch.setattr(pk, "hold_through_overshoot",
+                        lambda profile, rows, step, low, high: profile)
     return scanned
 
 
@@ -1111,3 +1116,33 @@ def test_measuring_the_whole_row_is_still_what_no_middle_means():
     rows = {0: (10.0, 90.0), 1: (20.0, 30.0)}
     profiles = pk.kern_profiles(rows, 100.0, 10)
     assert set(profiles[pk.RIGHT]) == {0, 1}
+
+
+# --- A flat side stays flat through the overshoot ----------------------------
+
+
+def test_the_overshoot_is_taken_off_the_box():
+    """`n` is drawn to 510 by its shoulder and its stem stops on 500. The
+    zone says those are the same line."""
+    master = SimpleNamespace(alignmentZones=[
+        SimpleNamespace(position=500.0, size=12.0),
+        SimpleNamespace(position=0.0, size=-12.0)])
+    assert pk.zone_edges(fake_layer(-10, 510), master) == (0.0, 500.0)
+
+
+def test_a_flat_side_holds_its_depth_through_the_overshoot():
+    """The stem has no ink of its own on the rows the shoulder overshoots
+    into. Left to the cone they recede, and a dead straight stem leans."""
+    profile = {row: 30.0 for row in range(0, 10)}  # rows to y=95
+    rows = {row: None for row in range(0, 12)}  # ink up to y=115
+    held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
+    assert held[10] == 30.0 and held[11] == 30.0, held
+
+
+def test_whitespace_that_is_not_overshoot_still_recedes():
+    """The rows above `L`'s foot are not overshoot - they are what lets a
+    neighbour tuck under - so nothing is carried up into them."""
+    profile = {row: 30.0 for row in range(0, 3)}  # ends at y=25
+    rows = {row: None for row in range(0, 12)}
+    held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
+    assert 5 not in held, 'a row nowhere near the zone was filled in'

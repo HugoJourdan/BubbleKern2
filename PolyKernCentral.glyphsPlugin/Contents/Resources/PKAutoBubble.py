@@ -232,6 +232,72 @@ def kern_profiles(rows, width, step, mid=None):
     }
 
 
+def zone_edges(layer, master):
+    """Where this layer's box would end without its overshoot. -> (low, high)
+
+    An alignment zone is the designer saying "everything in here is the same
+    line". A round shape is drawn a little past that line and a flat one
+    stops on it, so the top of `n` is the shoulder's overshoot and the top of
+    its stem is a few units below - and those few rows are the ONLY ones the
+    stem's side has no ink on.
+
+    Falls back to the box itself wherever there is no zone to read, which is
+    what a master with none configured gets.
+    """
+    bounds = layer.bounds
+    low = bounds.origin.y
+    high = low + bounds.size.height
+    low_edge, high_edge = low, high
+    try:
+        zones = getattr(master, "alignmentZones", None) or ()
+    except Exception:
+        zones = ()
+    for zone in zones:
+        try:
+            position = float(getattr(zone, "position", 0.0))
+            size = float(getattr(zone, "size", 0.0))
+        except Exception:
+            continue
+        lower, upper = min(position, position + size), max(position, position + size)
+        if lower <= high <= upper and position < high:
+            high_edge = min(high_edge, position)
+        if lower <= low <= upper and position > low:
+            low_edge = max(low_edge, position)
+    if low_edge >= high_edge:  # a glyph living entirely inside one zone
+        return low, high
+    return low_edge, high_edge
+
+
+def hold_through_overshoot(profile, rows, step, low_edge, high_edge):
+    """Carry a side's outermost depth out through the overshoot. -> {row: depth}
+
+    A flat side with a round one beside it on the same glyph - `n`'s stem
+    beside its shoulder - has no ink of its own on the rows the shoulder
+    overshoots into. Left alone, `cone_frontier` recedes across them at the
+    wall slope, and a stem that is dead straight for its whole height comes
+    out leaning by however deep the overshoot is: about thirteen units on a
+    1000 upm face, which is small, plainly wrong, and the first thing anyone
+    looking at an `n` sees.
+
+    ONLY INSIDE A ZONE, and only past the rows this side does answer for.
+    The rows above `L`'s foot are not overshoot - they are the whitespace
+    that lets a neighbour tuck under, and they still recede.
+    """
+    if not profile or not rows:
+        return profile
+    held = dict(profile)
+    first, last = min(profile), max(profile)
+    for row in rows:
+        if row in held:
+            continue
+        y = (row + 0.5) * step
+        if row > last and y >= high_edge:
+            held[row] = profile[last]
+        elif row < first and y <= low_edge:
+            held[row] = profile[first]
+    return held
+
+
 def cone_limits(profile, step, slope=S1_SLOPE):
     """Everything needed to ask a profile "how far do you reach at row R?".
 
@@ -1818,8 +1884,10 @@ def collect_sides(font, master, step, progress=None, names=None):
             continue
         measured = kern_profiles(rows, layer.width, step,
                                  (scanned[1] + scanned[2]) / 2.0)
+        low_edge, high_edge = zone_edges(layer, master)
         for side in (LEFT, RIGHT):
-            sides[side][glyph.name] = measured[side]
+            sides[side][glyph.name] = hold_through_overshoot(
+                measured[side], rows, step, low_edge, high_edge)
         low_y, high_y = layer_span(layer, master)
         geometry[glyph.name] = (low_y, high_y, layer.width)
     return sides, geometry
@@ -1921,6 +1989,10 @@ def auto_bubble_nodes(layer, side, gap=None, step=None, tolerance=None,
         return None
     profiles = kern_profiles(rows, layer.width, step,
                              (scanned[1] + scanned[2]) / 2.0)
+    low_edge, high_edge = zone_edges(layer, master)
+    profiles = {each: hold_through_overshoot(profile, rows, step,
+                                             low_edge, high_edge)
+                for each, profile in profiles.items()}
     if gap is None:
         gap = layer_gap(profiles)
     profile = profiles[side]
