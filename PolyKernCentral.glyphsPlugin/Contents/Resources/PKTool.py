@@ -649,47 +649,35 @@ class PolyKernTool(SelectTool):
 		self.infoBoxRules = None
 
 	def activate(self):  # When the tool is activated, updateUI and set activeLayer
-		# FIRST, AND OUTSIDE THE TRY. Everything below can fail on a font that
-		# declines PolyKern, and which tool is in hand is true either way. The
-		# Cancel path calls deactivate itself, which takes it back off again.
+		# FIRST, AND OUTSIDE THE TRY. Everything below can fail on a font, and
+		# which tool is in hand is true either way.
 		self.polyKernActive = True
 		try:
-			proceed = False
-			initialise = False
 			f = Glyphs.font
 
-			# check if initial dialog is necessary
-			use = f.tempData['usePolyKern'] # if user has already clicked Yes or Cancel in the dialog
-			if use == None: # if no pre-existing answer in userData
-				use = f.userData['usePolyKern']
+			# NOTHING TO ASK. Reaching for the tool is itself the answer to "are
+			# you sure you want to use PolyKern in this font?", and the question
+			# used to be put once per font, in a dialogue whose Cancel took the
+			# tool back out of your hand and told you to reopen the file to
+			# change your mind.
+			#
+			# THE FLAG OUTLIVES THE QUESTION, because it was never really the
+			# answer to it: it says whether this font's layers have been seeded,
+			# which is the one thing the first activation has to do and every
+			# later one must not do again.
+			initialise = not f.userData['usePolyKern']
+			f.userData['usePolyKern'] = True
 
-			if use == True: # PolyKern already in use
-				proceed = True
-			elif use == None: # on the first run per font file
-				alertTitle = 'Starting PolyKern'
-				alertMessage = """Are you sure you want to use PolyKern in this font?
-				(You can remove font's Bubble data from Edit > PolyKern Kerner)"""
-				initialise = show_alert(message=alertTitle, secondMessage=alertMessage)
-			elif use == False:
-				Glyphs.showNotification("PolyKern Tool", "If you want to use PolyKern, please reopen the file.")
-
-			if proceed or initialise: # standard proceed
-				f.tempData['usePolyKern'] = True
-				f.userData['usePolyKern'] = True
-				Glyphs.addCallback(self.updateUI, UPDATEINTERFACE)
-				self.infoBoxLive = True
-				self.placeInfoBoxSoon()
-				NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
-					self, b'_undoDidComplete:', 'NSUndoManagerDidUndoChangeNotification', None
-				)
-				NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
-					self, b'_undoDidComplete:', 'NSUndoManagerDidRedoChangeNotification', None
-				)
-				self.activeLayer = self.editViewController().activeLayer() if self.editViewController() is not None else None
-			else: # Cancel has been clicked or use is already False, go to Select Tool
-				f.tempData['usePolyKern'] = False
-				self.deactivate()
-				f.tool = 'SelectTool'
+			Glyphs.addCallback(self.updateUI, UPDATEINTERFACE)
+			self.infoBoxLive = True
+			self.placeInfoBoxSoon()
+			NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+				self, b'_undoDidComplete:', 'NSUndoManagerDidUndoChangeNotification', None
+			)
+			NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+				self, b'_undoDidComplete:', 'NSUndoManagerDidRedoChangeNotification', None
+			)
+			self.activeLayer = self.editViewController().activeLayer() if self.editViewController() is not None else None
 
 			if initialise:
 				for g in f.glyphs:

@@ -26,7 +26,7 @@ from AppKit import (
 	NSFontAttributeName,
 	NSStringDrawingUsesLineFragmentOrigin,
 	NSViewWidthSizable,  # to keep the group grid as wide as it is scrolled in
-	NSToolbarFlexibleSpaceItemIdentifier,  # to hold the export item out right
+	NSToolbarFlexibleSpaceItemIdentifier,  # to hold the settings out on the right
 )
 from Foundation import NSMakeRect, NSMakeSize
 
@@ -340,7 +340,7 @@ class PolyKernKerner(GeneralPlugin):
 			PKCommonLogic.log(f'generateBubbles error: {traceback.format_exc()}', error=True)
 
 	# THE PANES OF THE ONE WINDOW, and what the toolbar calls them.
-	KERNER, GROUPS, EXPORT, SETTINGS = 'kerner', 'groups', 'export', 'settings'
+	KERNER, GROUPS, SETTINGS = 'kerner', 'groups', 'settings'
 	WINDOW_SIZE = (840, 500)
 	settingsTool = None  # a class default; see the note on _relevantRows
 	groupGrid = None
@@ -352,12 +352,12 @@ class PolyKernKerner(GeneralPlugin):
 		# settings were two floating windows over the same canvas, and neither
 		# is any use without the other: the settings decide what a wall looks
 		# like and the kerner decides what to do with it. The font export was
-		# a tab inside the kerner, which made it look like a step of kerning
-		# rather than the separate, experimental thing it is.
+		# a tab inside the kerner, and then a pane of its own; it is a sheet off
+		# the kerner's own button now. It is one screen, reached when it is
+		# wanted, rather than a fourth thing to walk past on the way to kerning.
 		#
 		# ONE SIZE FOR EVERY PANE, deliberately: the alternative is a window
-		# that jumps size every time the toolbar is clicked. The kerner and
-		# the settings both fill it; the export pane centres itself in it.
+		# that jumps size every time the toolbar is clicked. All three fill it.
 		self.w = vanilla.Window(
 			self.WINDOW_SIZE,
 			minSize=(700, 420),
@@ -376,7 +376,6 @@ class PolyKernKerner(GeneralPlugin):
 		# posSize. Each pane lays its own contents out however it likes.
 		self.w.kernerPane = vanilla.Group((0, 0, 0, 0))
 		self.w.groupsPane = vanilla.Group((0, 0, 0, 0))
-		self.w.exportPane = vanilla.Group((0, 0, 0, 0))
 		self.w.settingsPane = vanilla.Group((0, 0, 0, 0))
 
 		# NO TAB VIEW ANY MORE. It carried "Generate Kerning" and "Generate
@@ -385,7 +384,6 @@ class PolyKernKerner(GeneralPlugin):
 		# Each of the two is a pane of its own now, and the tabs are gone.
 		self.buildKerningPane()
 		self.buildGroupsPane()
-		self.buildExportPane()
 		self.buildSettingsPane()
 		self.addPaneToolbar()
 		self.showPane(self.KERNER)
@@ -395,7 +393,7 @@ class PolyKernKerner(GeneralPlugin):
 	# delegate offers - so anybody who had opened the two-item version would
 	# have gone on seeing two items, and the new panes would simply not be
 	# there. A name it has never saved under has nothing to restore.
-	TOOLBAR_NAME = 'PolyKernPanes.4'
+	TOOLBAR_NAME = 'PolyKernPanes.5'
 
 	# THE ARTWORK THAT SITS AMONG THE SYMBOLS, and how tall its ink has to be
 	# to stand level with them. Measured rather than guessed: at the size the
@@ -432,10 +430,11 @@ class PolyKernKerner(GeneralPlugin):
 	def addPaneToolbar(self):
 		"""The panes, as the entries of a toolbar.
 
-		LEFT ALIGNED, WITH THE EXPORT HELD OUT TO THE RIGHT. The three that are
-		part of kerning something sit together; the experimental font export is
-		put where nothing is next to it. `preference` style would centre the
-		lot, so the style is `expanded`: same two rows, items along the left.
+		LEFT ALIGNED, WITH THE SETTINGS HELD OUT TO THE RIGHT. The two that are
+		the work itself sit together on the left; the settings are what you go
+		and change and come back from, so they sit apart from them.
+		`preference` style would centre the lot, so the style is `expanded`:
+		same two rows, items along the left.
 		"""
 		try:
 			def symbol(name):
@@ -452,17 +451,12 @@ class PolyKernKerner(GeneralPlugin):
 					toolTip='Which glyphs share a wall, and what they share',
 					imageObject=symbol('rectangle.stack.fill'), imageTemplate=True,
 					selectable=True, callback=self.pickGroups),
+				dict(itemIdentifier=NSToolbarFlexibleSpaceItemIdentifier),
 				dict(itemIdentifier=self.SETTINGS, label='Settings',
 					toolTip='What a wall is shaped like, and what the kerner '
 						'does with it',
 					imageObject=symbol('gear'), imageTemplate=True,
 					selectable=True, callback=self.pickSettings),
-				dict(itemIdentifier=NSToolbarFlexibleSpaceItemIdentifier),
-				dict(itemIdentifier=self.EXPORT, label='PK Export',
-					toolTip='Generate a font with the walls baked into it as '
-						'a BBLH table',
-					imageObject=symbol('square.and.arrow.up'), imageTemplate=True,
-					selectable=True, callback=self.pickExport),
 			]
 			self.w.addToolbar(self.TOOLBAR_NAME, items, addStandardItems=False,
 				displayMode='iconLabel', toolbarStyle='expanded')
@@ -487,10 +481,6 @@ class PolyKernKerner(GeneralPlugin):
 		self.showPane(self.GROUPS)
 
 	@objc.python_method
-	def pickExport(self, sender=None):
-		self.showPane(self.EXPORT)
-
-	@objc.python_method
 	def pickSettings(self, sender=None):
 		self.showPane(self.SETTINGS)
 
@@ -498,7 +488,7 @@ class PolyKernKerner(GeneralPlugin):
 	def paneGroups(self):
 		"""-> {identifier: the Group that is that pane}"""
 		return {self.KERNER: self.w.kernerPane, self.GROUPS: self.w.groupsPane,
-			self.EXPORT: self.w.exportPane, self.SETTINGS: self.w.settingsPane}
+			self.SETTINGS: self.w.settingsPane}
 
 	@objc.python_method
 	def showPane(self, which):
@@ -794,6 +784,10 @@ class PolyKernKerner(GeneralPlugin):
 		pane.group1.infoButton.getNSButton().setToolTip_(
 			'What the most relevant pairs are, and which ones they are')
 
+		# THE EXPORT, NEXT TO THE THING IT COMES AFTER. It was a pane of its
+		# own, reached from the toolbar; it is a sheet off this button now.
+		pane.group1.exportButton = vanilla.Button('auto', "PK Export…",
+			sizeStyle="regular", callback=self.openExportSheet)
 		pane.group1.applyButton = vanilla.Button('auto', "Apply Kerning",
 			sizeStyle="regular", callback=self.PolyKernMain)
 		# DIRECTLY OVER THE BUTTON IT DESCRIBES. It used to sit under the list,
@@ -807,10 +801,16 @@ class PolyKernKerner(GeneralPlugin):
 		# breaks one and drops the view where it likes. The total and the
 		# button it counts for are that chain. Everything else hangs from the
 		# top and stops.
+		# AND THE EXPORT PINNED TO THE BOTTOM RATHER THAN THE TOP, so it sits
+		# level with the button beside it however tall the total above it comes
+		# out. One end only: the chain below is the one that gives the bar its
+		# height, and a second one pinned at both ends would have to agree with
+		# it to the point.
 		rules = [
-			'H:|-[includeRelevant]-[infoButton(18)]-[progress]-[applyButton]-|',
+			'H:|-[includeRelevant]-[infoButton(18)]-[progress]-[exportButton]-[applyButton]-|',
 			'H:[total]-|',
 			'V:|-(6)-[total(14)]-(4)-[applyButton(30)]-(8)-|',
+			'V:[exportButton(30)]-(8)-|',
 			'V:|-(30)-[includeRelevant(18)]',
 			'V:|-(30)-[infoButton(18)]',
 			'V:|-(28)-[progress]',
@@ -866,11 +866,20 @@ class PolyKernKerner(GeneralPlugin):
 	# wraps, and it is written in lines that are meant to stay lines.
 	CAPTION_WIDTH = 600
 
-	@objc.python_method
-	def buildExportPane(self):
-		"""Exporting a font with the bubbles baked in as BBLH."""
-		pane = self.w.exportPane
-		pane.caption = vanilla.TextBox('auto', """This feature is EXPERIMENTAL and may not work as expected.
+	# WHAT THAT PARAGRAPH COMES TO AT THAT WIDTH - measured in the control
+	# vanilla actually makes, which is the only measurement worth having: a
+	# bare NSTextField puts the same eleven lines at 165 points, and a
+	# TextBox at 176. The sheet is sized round it, and everything on it is
+	# placed off it, so lengthening the caption moves the rest down instead
+	# of quietly running off the bottom.
+	CAPTION_HEIGHT = 176
+	EXPORT_MARGIN = 20
+	EXPORT_BUTTON_W = 200
+	# THE MARGIN, THE PARAGRAPH, A GAP, TWO BUTTONS, THE WAY OUT, THE MARGIN.
+	EXPORT_SHEET_SIZE = (CAPTION_WIDTH + 2 * EXPORT_MARGIN, CAPTION_HEIGHT + 180)
+	exportW = None
+
+	EXPORT_CAPTION = """This feature is EXPERIMENTAL and may not work as expected.
 
 1. You can generate a new font with 'BBLH' table based on the PolyKern data.
 (Maybe also vertical 'BBLV' table in the future)
@@ -880,41 +889,70 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 
 3. Interpolation is currently not supported. Only the instances matching masters will be exported.
 
-4. The font format is set in the "Export..." menu.""")
-		pane.exportButton = vanilla.Button('auto', 'Generate Bubbled Font', self.generateBubbledFont)
-		pane.getHTMLButton = vanilla.Button('auto', 'Get HTML tester', self.getHTMLforBBLH)
-		pane.getHTMLButton.enable(False)
-		pane.spacer0 = vanilla.Group('auto')
-		pane.spacer1 = vanilla.Group('auto')
-		pane.spacer2 = vanilla.Group('auto')
-		pane.spacer3 = vanilla.Group('auto')
-		# THE BUTTONS GET THEIR OWN PAIR. Sharing the caption's meant pinning
-		# their width pinned the caption's too, and the paragraph came out a
-		# 200 point column.
-		pane.spacer4 = vanilla.Group('auto')
-		pane.spacer5 = vanilla.Group('auto')
-		# EVERY WIDTH IS STATED, because between two spacers that are only said
-		# to equal each other nothing here has a width auto layout has to
-		# respect - it has a free choice, and takes it differently from run to
-		# run: these rules put the button at 214 points in one process and at
-		# 587, the whole window, in the next. CAPTION_WIDTH clears the longest
-		# line in the paragraph, which is what stops it wrapping.
-		rules = [
-			'H:|[spacer0(==spacer1)]-[caption(%d)]-[spacer1]|' % self.CAPTION_WIDTH,
-			'H:|[spacer4(==spacer5)]-[exportButton(200)]-[spacer5]|',
-			'H:|[spacer4]-[getHTMLButton(200)]-[spacer5]|',
-			'V:|[spacer2(==spacer3)]-[caption]-(20)-[exportButton]-[getHTMLButton]-[spacer3]|',
-		]
-		pane.addAutoPosSizeRules(rules, None)
-		self.pinExportRibbon(pane)
+4. The font format is set in the "Export..." menu."""
+
+	@objc.python_method
+	def openExportSheet(self, sender=None):
+		"""The font export, on a sheet over the kerner.
+
+		A PANE OF ITS OWN IS A PLACE YOU CAN BE. This one had a toolbar item
+		held out to the right of every other, which is a lot of standing
+		furniture for an experiment two buttons wide - and standing among the
+		panes that are the actual work, it read as a fourth step of kerning.
+		It is reached from the kerner now, from a button beside the one that
+		kerns, and it goes away again afterwards.
+
+		POSSIZE, NOT RULES. The pane's rules had to centre the block inside a
+		window sized for something else, and took six spacer views and every
+		width stated to do it - see the note that used to sit on them. A sheet
+		sized round its own contents needs none of that.
+		"""
+		try:
+			# ESCAPE CLOSES IT, which is what `escapableSheet` is for. A sheet
+			# that can only be dismissed by finding the right button is a modal
+			# trap, and this one stands over the window you were working in.
+			w = escapableSheet(self.EXPORT_SHEET_SIZE, self.w)
+			self.exportW = w
+			width, height = self.EXPORT_SHEET_SIZE
+			edge = self.EXPORT_MARGIN
+			middle = (width - self.EXPORT_BUTTON_W) / 2
+			under = edge + self.CAPTION_HEIGHT + edge  # clear of the paragraph
+			w.caption = vanilla.TextBox((edge, edge, -edge, self.CAPTION_HEIGHT),
+				self.EXPORT_CAPTION)
+			w.generateButton = vanilla.Button(
+				(middle, under, self.EXPORT_BUTTON_W, 20), 'Generate Bubbled Font',
+				callback=self.generateBubbledFont)
+			w.getHTMLButton = vanilla.Button(
+				(middle, under + 40, self.EXPORT_BUTTON_W, 20), 'Get HTML tester',
+				callback=self.getHTMLforBBLH)
+			w.getHTMLButton.enable(False)
+			# THE WAY OUT, WHICH A PANE DID NOT NEED: a pane is left by picking
+			# another one. It takes the return key as well, because the only other
+			# candidate for it here is exporting a font - which is not a thing to
+			# set going on the way past.
+			w.closeButton = vanilla.Button(
+				(-(edge + 100), height - 46, 100, 20), 'Close',
+				callback=self.closeExportSheet)
+			w.setDefaultButton(w.closeButton)
+			self.pinExportRibbon(w.getNSWindow().contentView())
+			w.open()
+		except Exception:
+			log(f'openExportSheet error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def closeExportSheet(self, sender=None):
+		try:
+			self.exportW.close()
+		except Exception:
+			log(f'closeExportSheet error: {traceback.format_exc()}', error=True)
 
 	# THE CORNER IT SITS IN, in points from the pane's top right.
 	RIBBON_INSET = 0.0
 	exportRibbon = None
 
 	@objc.python_method
-	def pinExportRibbon(self, pane):
-		"""Sit a BETA ribbon in the export pane's top right corner.
+	def pinExportRibbon(self, view):
+		"""Sit a BETA ribbon in the export sheet's top right corner.
 
 		OUTSIDE THE RULES, like the list's add and delete buttons: the visual
 		format language can put a view after another one, not over the corner
@@ -927,7 +965,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 				NSMakeRect(0, 0, size, size))
 			ribbon.setWord('BETA')
 			self.exportRibbon = ribbon
-			view = pane.getNSView()
 			view.addSubview_(ribbon)
 			ribbon.setTranslatesAutoresizingMaskIntoConstraints_(False)
 			NSLayoutConstraint.activateConstraints_([

@@ -298,19 +298,28 @@ def test_the_window_is_one_polykern_not_a_kerner(window):
 
 def test_every_pane_exists(window):
 	plugin, _ = window
-	for name in ('kernerPane', 'groupsPane', 'exportPane', 'settingsPane'):
+	for name in ('kernerPane', 'groupsPane', 'settingsPane'):
 		assert hasattr(plugin.w, name), name
 
 
-def test_the_toolbar_offers_every_pane_with_the_export_held_out(window):
-	"""The three that are part of kerning something sit together on the left;
-	the experimental export is pushed to the far end by a flexible space."""
+def test_the_export_is_not_a_pane_any_more(window):
+	"""It is a sheet off the kerner's own button now, not a place you can be
+	standing when you meant to be kerning."""
+	plugin, _ = window
+	assert not hasattr(plugin.w, 'exportPane')
+	assert set(plugin.paneGroups()) == {plugin.KERNER, plugin.GROUPS,
+			plugin.SETTINGS}, plugin.paneGroups().keys()
+
+
+def test_the_toolbar_holds_the_settings_out_to_the_right(window):
+	"""The two that are the work itself sit together on the left; the
+	settings are what you go and change and come back from."""
 	plugin, _ = window
 	toolbar = plugin.w.getNSWindow().toolbar()
 	assert toolbar is not None, 'no toolbar'
 	names = [str(i.itemIdentifier()) for i in toolbar.items()]
-	assert names == [plugin.KERNER, plugin.GROUPS, plugin.SETTINGS,
-			'NSToolbarFlexibleSpaceItem', plugin.EXPORT], names
+	assert names == [plugin.KERNER, plugin.GROUPS,
+			'NSToolbarFlexibleSpaceItem', plugin.SETTINGS], names
 
 
 def test_the_items_are_not_centred(window):
@@ -323,11 +332,14 @@ def test_the_items_are_not_centred(window):
 	assert style == NSWindowToolbarStyleExpanded, style
 
 
-def test_the_export_item_says_which_export_it_is(window):
+def test_the_toolbar_has_no_export_item(window):
+	"""A toolbar item is standing furniture. This one stood out past every
+	other one, for an experiment two buttons wide."""
 	plugin, _ = window
-	item = {str(i.itemIdentifier()): i for i in
-			plugin.w.getNSWindow().toolbar().items()}[plugin.EXPORT]
-	assert str(item.label()) == 'PK Export'
+	items = plugin.w.getNSWindow().toolbar().items()
+	assert 'export' not in [str(i.itemIdentifier()) for i in items]
+	labels = [str(i.label()) for i in items]
+	assert not [l for l in labels if 'Export' in l], labels
 
 
 def test_the_item_set_cannot_be_saved_over(window):
@@ -338,12 +350,13 @@ def test_the_item_set_cannot_be_saved_over(window):
 	toolbar = plugin.w.getNSWindow().toolbar()
 	assert not toolbar.autosavesConfiguration()
 	assert not toolbar.allowsUserCustomization()
-	assert plugin.TOOLBAR_NAME != 'PolyKernPanes', 'the name the old set saved under'
+	assert plugin.TOOLBAR_NAME not in ('PolyKernPanes', 'PolyKernPanes.4'), \
+			'a name an older, differently-sized set has already saved under'
 
 
 def test_showing_one_pane_hides_the_rest(window):
 	plugin, _ = window
-	for which in (plugin.SETTINGS, plugin.EXPORT, plugin.KERNER, plugin.GROUPS):
+	for which in (plugin.SETTINGS, plugin.KERNER, plugin.GROUPS):
 		plugin.showPane(which)
 		for identifier, pane in plugin.paneGroups().items():
 			hidden = pane.getNSView().isHidden()
@@ -622,25 +635,134 @@ def test_the_kerning_controls_are_straight_in_the_pane(window):
 	assert hasattr(plugin.w.kernerPane, 'group1')
 
 
-def test_the_export_button_moved_with_it(window):
+# --- The export, moved in beside the kerning ---------------------------------
+# It was a pane of the window, picked from a toolbar item held out past every
+# other one. It is a button on the kerning pane now, and a sheet over it.
+
+
+@pytest.fixture
+def exportSheet(window):
+	"""The export sheet, up on the kerner window. -> (plugin, sheet)"""
 	plugin, _ = window
-	assert hasattr(plugin.w.exportPane, 'exportButton')
-	assert not hasattr(plugin.w.kernerPane, 'exportButton')
-	assert plugin.w.exportPane.exportButton.getTitle() == 'Generate Bubbled Font'
+	plugin.openExportSheet()
+	# `openExportSheet` catches and logs, so a sheet that failed to build
+	# leaves this at the class default rather than raising out here.
+	assert plugin.exportW is not None, 'the sheet never went up'
+	plugin.exportW.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	yield plugin, plugin.exportW
+	plugin.closeExportSheet()
 
 
-def test_the_export_pane_is_laid_out(window):
-	"""Its rules were written for a tab and are used in a pane now.
+def _visual(button):
+	"""A button's frame is bigger than the button: the bezel and the focus
+	ring are drawn inside it. What is on screen is the alignment rect."""
+	native = button.getNSButton()
+	return native.alignmentRectForFrame_(native.frame())
 
-	THE BUTTON'S WIDTH IS NOT PINNED HERE, deliberately. Unconstrained it has
-	no settled width - see the note on the rules - and this harness happens to
-	resolve the ambiguity the flattering way every time, so an assertion about
-	it would pass whether the width was stated or not."""
+
+def test_the_kerning_pane_offers_the_export(window):
 	plugin, _ = window
-	plugin.showPane(plugin.EXPORT)
+	button = plugin.w.kernerPane.group1.exportButton
+	assert button.getTitle() == 'PK Export…', button.getTitle()
+
+
+def test_it_sits_beside_the_button_that_kerns(window):
+	"""Next to Apply Kerning, on the same line and to its left - the export
+	comes after the kerning, and reads left to right."""
+	plugin, _ = window
 	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
-	frame = plugin.w.exportPane.exportButton.getNSButton().frame()
-	assert frame.size.width > 20 and frame.size.height > 10, frame
+	group = plugin.w.kernerPane.group1
+	export, applies = _visual(group.exportButton), _visual(group.applyButton)
+	assert export.origin.x + export.size.width <= applies.origin.x + 1, \
+			'sitting on the button that kerns'
+	assert export.origin.y == pytest.approx(applies.origin.y, abs=1.0), \
+			'not on the same line'
+	assert export.size.height == pytest.approx(applies.size.height, abs=1.0), \
+			'not the same height'
+
+
+def test_it_does_not_sit_on_the_progress_bar(window):
+	plugin, _ = window
+	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
+	group = plugin.w.kernerPane.group1
+	bar = group.progress._nsObject.frame()
+	export = _visual(group.exportButton)
+	assert bar.origin.x + bar.size.width <= export.origin.x + 1, 'overlapping'
+
+
+def test_pressing_it_puts_the_sheet_up(window):
+	plugin, _ = window
+	assert plugin.exportW is None, 'up before anybody asked'
+	plugin.w.kernerPane.group1.exportButton.getNSButton().performClick_(None)
+	try:
+		assert plugin.exportW is not None, 'nothing came up'
+	finally:
+		plugin.closeExportSheet()
+
+
+def test_the_sheet_holds_what_the_pane_held(exportSheet):
+	plugin, sheet = exportSheet
+	assert sheet.generateButton.getTitle() == 'Generate Bubbled Font'
+	assert sheet.getHTMLButton.getTitle() == 'Get HTML tester'
+	assert not sheet.getHTMLButton.getNSButton().isEnabled(), \
+			'it was disabled in the pane'
+	assert sheet.caption.get() == plugin.EXPORT_CAPTION
+
+
+def test_the_sheet_can_be_got_out_of(exportSheet):
+	"""A pane is left by picking another one; a sheet has to offer its own
+	way out. Escape is the other one - see `escapableSheet`."""
+	plugin, sheet = exportSheet
+	assert sheet.closeButton.getTitle() == 'Close'
+	assert isinstance(sheet, kerner.escapableSheet)
+
+
+def test_the_return_key_does_not_export_a_font(exportSheet):
+	"""The default button is the way out, not the action. Exporting a font is
+	not a thing to set off on the way past."""
+	plugin, sheet = exportSheet
+	default = sheet.getNSWindow().defaultButtonCell()
+	assert default is not None, 'no default button'
+	assert default is sheet.closeButton.getNSButton().cell()
+
+
+def test_everything_on_the_sheet_is_on_the_sheet(exportSheet):
+	"""It is sized round its contents, so there is nothing to absorb a row
+	that grew: anything added has to be measured back in here."""
+	plugin, sheet = exportSheet
+	view = sheet.getNSWindow().contentView()
+	size = view.frame().size
+	for name in ('caption', 'generateButton', 'getHTMLButton', 'closeButton'):
+		frame = getattr(sheet, name)._nsObject.frame()
+		assert frame.origin.y >= -1, f'{name} off the bottom'
+		assert frame.origin.y + frame.size.height <= size.height + 1, \
+				f'{name} off the top of {size.height}'
+		assert frame.origin.x >= -1, f'{name} off the left'
+		assert frame.origin.x + frame.size.width <= size.width + 1, \
+				f'{name} off the right of {size.width}'
+
+
+def test_the_rows_do_not_sit_on_one_another(exportSheet):
+	"""A sheet's content view is NOT flipped, so the lower control has the
+	smaller y."""
+	plugin, sheet = exportSheet
+	order = ('caption', 'generateButton', 'getHTMLButton', 'closeButton')
+	for upper, lower in zip(order, order[1:]):
+		over = getattr(sheet, upper)._nsObject.frame()
+		under = getattr(sheet, lower)._nsObject.frame()
+		assert under.origin.y + under.size.height <= over.origin.y + 1, \
+				f'{lower} is on top of {upper}'
+
+
+def test_the_caption_is_given_the_height_it_needs(exportSheet):
+	"""The sheet is sized round the paragraph, so the paragraph's box has to
+	be the size the paragraph actually comes to."""
+	plugin, sheet = exportSheet
+	field = sheet.caption.getNSTextField()
+	needs = field.cell().cellSizeForBounds_(
+			((0, 0), (plugin.CAPTION_WIDTH, 10000))).height
+	assert plugin.CAPTION_HEIGHT >= needs, f'{needs:.0f} into {plugin.CAPTION_HEIGHT}'
+	assert plugin.EXPORT_SHEET_SIZE[0] >= plugin.CAPTION_WIDTH + 40, 'no margins'
 
 
 def test_the_kerning_pane_keeps_a_top_margin(window):
@@ -705,43 +827,41 @@ def test_the_caption_counts_a_glyph_on_both_sides_once():
 
 
 # --- The BETA ribbon ---------------------------------------------------------
-# The export writes a table nothing shipping reads yet. The pane said so in a
+# The export writes a table nothing shipping reads yet. The sheet says so in a
 # paragraph, which is a thing read once.
 
 
-def _ribbonPane(plugin):
-	return plugin.w.exportPane.getNSView()
+def _ribbonView(sheet):
+	return sheet.getNSWindow().contentView()
 
 
-def test_the_export_pane_carries_a_ribbon(window):
-	plugin, _ = window
+def test_the_export_sheet_carries_a_ribbon(exportSheet):
+	plugin, _ = exportSheet
 	ribbon = plugin.exportRibbon
 	assert ribbon is not None
 	assert type(ribbon).__name__ == 'PKRibbonView'
 	assert ribbon._word == 'BETA'
 
 
-def test_it_sits_in_the_top_right_corner(window):
-	plugin, _ = window
-	plugin.showPane(plugin.EXPORT)
-	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
-	pane = _ribbonPane(plugin)
+def test_it_sits_in_the_top_right_corner(exportSheet):
+	plugin, sheet = exportSheet
+	view = _ribbonView(sheet)
 	frame = plugin.exportRibbon.frame()
 	assert frame.origin.x + frame.size.width == pytest.approx(
-			pane.frame().size.width), 'not against the right edge'
-	high = (frame.origin.y if pane.isFlipped()
-			else pane.frame().size.height - (frame.origin.y + frame.size.height))
+			view.frame().size.width), 'not against the right edge'
+	high = (frame.origin.y if view.isFlipped()
+			else view.frame().size.height - (frame.origin.y + frame.size.height))
 	assert high == pytest.approx(0), f'{high} points down from the top'
 
 
-def test_it_is_drawn_over_everything_the_rules_placed(window):
-	plugin, _ = window
-	assert list(_ribbonPane(plugin).subviews())[-1] is plugin.exportRibbon
+def test_it_is_drawn_over_everything_else(exportSheet):
+	plugin, sheet = exportSheet
+	assert list(_ribbonView(sheet).subviews())[-1] is plugin.exportRibbon
 
 
-def test_it_does_not_swallow_clicks(window):
-	"""It lies over the corner of a pane and answers to nothing."""
-	plugin, _ = window
+def test_it_does_not_swallow_clicks(exportSheet):
+	"""It lies over the corner of the sheet and answers to nothing."""
+	plugin, _ = exportSheet
 	ribbon = plugin.exportRibbon
 	middle = ribbon.frame()
 	assert ribbon.hitTest_((middle.origin.x + 4, middle.origin.y + 4)) is None
@@ -770,31 +890,29 @@ def test_the_word_fits_on_the_band():
 	assert thickness > label.size().height, f'{thickness} for {label.size().height}'
 
 
-def test_the_caption_is_wide_enough_not_to_wrap(window):
+def test_the_caption_is_wide_enough_not_to_wrap(exportSheet):
 	"""It is written in lines that are meant to stay lines - numbered steps,
 	and a Terminal command that reads badly broken in half. Lengthen the text
 	past the box and it wraps with nothing said about it."""
-	plugin, _ = window
-	field = plugin.w.exportPane.caption.getNSTextField()
+	plugin, sheet = exportSheet
+	field = sheet.caption.getNSTextField()
 	natural = field.cell().cellSizeForBounds_(((0, 0), (10000, 10000))).width
 	assert plugin.CAPTION_WIDTH >= natural, f'{natural:.0f} into {plugin.CAPTION_WIDTH}'
-	assert plugin.CAPTION_WIDTH < plugin.WINDOW_SIZE[0] - 100, 'no room either side'
+	assert plugin.EXPORT_SHEET_SIZE[0] == plugin.CAPTION_WIDTH + 40, \
+			'the sheet is no longer sized round the paragraph'
 
 
-def test_the_caption_and_the_buttons_are_spaced_apart(window):
-	"""They shared a pair of spacers, which cannot hold two different widths
-	at once: something has to give, and what gives is the pair being equal -
-	so the buttons come out off to one side."""
-	plugin, _ = window
-	plugin.showPane(plugin.EXPORT)
-	plugin.w.getNSWindow().contentView().layoutSubtreeIfNeeded()
-	pane = plugin.w.exportPane.getNSView().frame()
-	for name in ('caption', 'exportButton', 'getHTMLButton'):
-		control = getattr(plugin.w.exportPane, name)._nsObject
-		frame = control.frame()
+def test_the_two_buttons_are_centred_under_it(exportSheet):
+	"""They shared a pair of spacer views with the caption once, which cannot
+	hold two different widths at once: what gave was the pair being equal, and
+	the buttons came out off to one side. The sheet places them by hand."""
+	plugin, sheet = exportSheet
+	width = sheet.getNSWindow().contentView().frame().size.width
+	for name in ('generateButton', 'getHTMLButton'):
+		frame = getattr(sheet, name)._nsObject.frame()
 		middle = frame.origin.x + frame.size.width / 2.0
-		assert middle == pytest.approx(pane.size.width / 2.0, abs=1.0), \
-				f'{name} centred at {middle:.0f} of {pane.size.width:.0f}'
+		assert middle == pytest.approx(width / 2.0, abs=1.0), \
+				f'{name} centred at {middle:.0f} of {width:.0f}'
 
 
 # --- Set Refer Glyphs Automatically, moved -----------------------------------

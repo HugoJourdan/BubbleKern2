@@ -704,8 +704,8 @@ def test_the_commands_are_there_while_it_is(tool, monkeypatch):
 
 
 def test_leaving_the_tool_puts_the_commands_away(tool, monkeypatch):
-	"""`deactivate` is the counterpart, and the declined-font path inside
-	`activate` calls it too."""
+	"""`deactivate` is the counterpart. It used to be reached from inside
+	`activate` too, on the font that declined the opening question."""
 	monkeypatch.setattr(tool, 'polyKernActive', True, raising=False)
 	monkeypatch.setattr(tool_module.Glyphs, 'removeCallback',
 			lambda *a, **k: None, raising=False)
@@ -716,3 +716,110 @@ def test_leaving_the_tool_puts_the_commands_away(tool, monkeypatch):
 	tool.deactivate()
 	assert tool.polyKernActive is False
 	assert _menuTitles(tool) == ['Something Glyphs Put There']
+
+
+# --- Picking the tool is the answer ------------------------------------------
+# It used to open with "Are you sure you want to use PolyKern in this font?",
+# once per font, and Cancel took the tool back out of your hand and told you to
+# reopen the file to change your mind. What the flag it wrote actually records
+# is whether the font's layers have been seeded, and that still has to happen
+# exactly once.
+
+
+class _Font:
+	def __init__(self, glyphs=(), used=None):
+		self.userData = UserData()
+		self.tempData = UserData()
+		if used is not None:
+			self.userData['usePolyKern'] = used
+		self.glyphs = list(glyphs)
+		self.tool = 'PolyKernTool'
+
+
+def _activated(tool, monkeypatch, font):
+	"""Run `activate` on `font` with everything outside it stubbed.
+
+	-> {'asked': [...], 'seeded': [layers], 'loaded': int}
+	"""
+	seen = {'asked': [], 'seeded': [], 'loaded': 0}
+	monkeypatch.setattr(tool_module.Glyphs, 'font', font, raising=False)
+	monkeypatch.setattr(tool_module.Glyphs, 'addCallback',
+			lambda *a, **k: None, raising=False)
+	monkeypatch.setattr(tool_module.Glyphs, 'showNotification',
+			lambda *a, **k: seen['asked'].append(a), raising=False)
+	monkeypatch.setattr(tool_module, 'show_alert',
+			lambda *a, **k: seen['asked'].append(a) or True, raising=False)
+	monkeypatch.setattr(tool_module, 'NSNotificationCenter',
+			SimpleNamespace(defaultCenter=lambda: SimpleNamespace(
+				addObserver_selector_name_object_=lambda *a: None)),
+			raising=False)
+	monkeypatch.setattr(tool_module.store, 'applyPreviewKerning',
+			lambda *a, **k: None, raising=False)
+	monkeypatch.setattr(type(tool), 'placeInfoBoxSoon', lambda self, *a: None,
+			raising=False)
+	monkeypatch.setattr(type(tool), 'editViewController', lambda self: None,
+			raising=False)
+	monkeypatch.setattr(type(tool), 'deactivate',
+			lambda self: seen.setdefault('left', True), raising=False)
+	monkeypatch.setattr(type(tool), 'saveNodesToLayer',
+			lambda self, layer: seen['seeded'].append(layer), raising=False)
+	monkeypatch.setattr(type(tool), 'loadNodesFromLayer',
+			lambda self, layer=None, **k: seen.update(loaded=seen['loaded'] + 1),
+			raising=False)
+	tool.activate()
+	return seen
+
+
+def _twoGlyphs():
+	first = Layer('a', 500)
+	second = Layer('b', 500)
+	return [first.parent, second.parent]
+
+
+def test_picking_the_tool_asks_nothing(tool, monkeypatch):
+	seen = _activated(tool, monkeypatch, _Font(_twoGlyphs()))
+	assert seen['asked'] == [], seen['asked']
+
+
+def test_it_stays_in_your_hand(tool, monkeypatch):
+	"""Cancel used to put the Select tool back. There is no Cancel."""
+	font = _Font(_twoGlyphs())
+	seen = _activated(tool, monkeypatch, font)
+	assert tool.polyKernActive is True
+	assert font.tool == 'PolyKernTool', 'the tool was taken back out'
+	assert 'left' not in seen, 'deactivate was called on the way in'
+
+
+def test_the_first_activation_seeds_every_layer(tool, monkeypatch):
+	"""What the dialogue's OK used to be worth. It is the one thing the first
+	activation has to do, and it now happens without being asked for."""
+	font = _Font(_twoGlyphs())
+	seen = _activated(tool, monkeypatch, font)
+	assert len(seen['seeded']) == 2, seen['seeded']
+	assert seen['loaded'] == 1
+	assert font.userData['usePolyKern'] is True, 'the font was not marked'
+
+
+def test_a_font_that_has_been_seeded_is_not_seeded_again(tool, monkeypatch):
+	"""Seeding walks every layer of every glyph. Doing it on every activation
+	would be the cost of the question, paid on every visit instead of once."""
+	font = _Font(_twoGlyphs(), used=True)
+	seen = _activated(tool, monkeypatch, font)
+	assert seen['seeded'] == [], seen['seeded']
+	assert seen['loaded'] == 0
+
+
+def test_the_second_activation_in_a_session_seeds_nothing(tool, monkeypatch):
+	"""The flag is written on the way in, so the font is marked before
+	anything can activate it a second time."""
+	font = _Font(_twoGlyphs())
+	_activated(tool, monkeypatch, font)
+	seen = _activated(tool, monkeypatch, font)
+	assert seen['seeded'] == [], seen['seeded']
+
+
+def test_the_question_is_gone_from_the_source(tool):
+	"""Belt and braces: the wording, wherever it might have been left."""
+	text = (RESOURCES / 'PKTool.py').read_text()
+	assert 'Starting PolyKern' not in text
+	assert 'please reopen the file' not in text
