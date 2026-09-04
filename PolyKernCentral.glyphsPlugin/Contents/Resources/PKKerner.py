@@ -925,7 +925,6 @@ Install it in Glyphs Python using this Terminal command: "pip install fonttools"
 			w.getHTMLButton = vanilla.Button(
 				(middle, under + 40, self.EXPORT_BUTTON_W, 20), 'Get HTML tester',
 				callback=self.getHTMLforBBLH)
-			w.getHTMLButton.enable(False)
 			# THE WAY OUT, WHICH A PANE DID NOT NEED: a pane is left by picking
 			# another one. It takes the return key as well, because the only other
 			# candidate for it here is exporting a font - which is not a thing to

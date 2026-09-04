@@ -704,8 +704,7 @@ def test_the_sheet_holds_what_the_pane_held(exportSheet):
 	plugin, sheet = exportSheet
 	assert sheet.generateButton.getTitle() == 'Generate Bubbled Font'
 	assert sheet.getHTMLButton.getTitle() == 'Get HTML tester'
-	assert not sheet.getHTMLButton.getNSButton().isEnabled(), \
-			'it was disabled in the pane'
+	assert sheet.getHTMLButton.getNSButton().isEnabled(), 'greyed out'
 	assert sheet.caption.get() == plugin.EXPORT_CAPTION
 
 
