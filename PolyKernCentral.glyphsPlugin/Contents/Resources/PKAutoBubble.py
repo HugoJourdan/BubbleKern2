@@ -269,32 +269,45 @@ def zone_edges(layer, master):
 
 
 def hold_through_overshoot(profile, rows, step, low_edge, high_edge):
-    """Carry a side's outermost depth out through the overshoot. -> {row: depth}
+    """A side does not recede inside an alignment zone. -> {row: depth}
 
-    A flat side with a round one beside it on the same glyph - `n`'s stem
-    beside its shoulder - has no ink of its own on the rows the shoulder
-    overshoots into. Left alone, `cone_frontier` recedes across them at the
-    wall slope, and a stem that is dead straight for its whole height comes
-    out leaning by however deep the overshoot is: about thirteen units on a
-    1000 upm face, which is small, plainly wrong, and the first thing anyone
-    looking at an `n` sees.
+    `n`'s stem stops ON the flat line and its shoulder is drawn a little
+    past it, so on the rows above that line the leftmost ink is no longer
+    the stem - it is the shoulder leaning in, ten or twenty units further
+    across. Followed honestly, that tilts a wall down a side that is dead
+    straight for its whole height: about thirteen units on a 1000 upm face,
+    small, plainly wrong, and the first thing anyone looking at an `n` sees.
 
-    ONLY INSIDE A ZONE, and only past the rows this side does answer for.
-    The rows above `L`'s foot are not overshoot - they are the whitespace
-    that lets a neighbour tuck under, and they still recede.
+    A zone is the designer saying "everything in here is the same line". So
+    inside one, a side may still reach FURTHER out - an `o` bulges past the
+    line and that bulge is real - but it may not recede: it holds whatever
+    depth it had at the line. Rows the side has no ink on at all are held
+    the same way, which is the other half of the same sentence.
+
+    OUTSIDE A ZONE NOTHING IS CAPPED. The rows above `L`'s foot are not
+    overshoot - they are the whitespace that lets a neighbour tuck under -
+    and `cone_frontier` still recedes across them.
     """
-    if not profile or not rows:
+    if not profile:
         return profile
     held = dict(profile)
-    first, last = min(profile), max(profile)
-    for row in rows:
-        if row in held:
-            continue
-        y = (row + 0.5) * step
-        if row > last and y >= high_edge:
-            held[row] = profile[last]
-        elif row < first and y <= low_edge:
-            held[row] = profile[first]
+    every = set(rows) | set(profile)
+
+    def hold(band, anchor):
+        """Cap `band` at the depth the side had on the flat line."""
+        if anchor is None:
+            return
+        limit = held[anchor]
+        for row in band:
+            current = held.get(row)
+            held[row] = limit if current is None else min(current, limit)
+
+    inside = [row for row in profile if (row + 0.5) * step <= high_edge]
+    hold([row for row in every if (row + 0.5) * step > high_edge],
+         max(inside) if inside else None)
+    inside = [row for row in profile if (row + 0.5) * step >= low_edge]
+    hold([row for row in every if (row + 0.5) * step < low_edge],
+         min(inside) if inside else None)
     return held
 
 

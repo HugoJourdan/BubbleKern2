@@ -1146,3 +1146,22 @@ def test_whitespace_that_is_not_overshoot_still_recedes():
     rows = {row: None for row in range(0, 12)}
     held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
     assert 5 not in held, 'a row nowhere near the zone was filled in'
+
+
+def test_a_side_does_not_recede_inside_the_zone():
+    """The rows above `n`'s stem are not empty - they hold the shoulder,
+    leaning in. Measured honestly they tilt a wall that should be vertical."""
+    profile = {row: 30.0 for row in range(0, 10)}  # the stem, to y=95
+    profile.update({10: 90.0, 11: 120.0})  # the shoulder, inside the zone
+    rows = {row: None for row in range(0, 12)}
+    held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
+    assert held[10] == 30.0 and held[11] == 30.0, held
+
+
+def test_it_may_still_reach_further_out_inside_the_zone():
+    """An `o` is drawn past the line and that bulge is real ink."""
+    profile = {row: 30.0 for row in range(0, 10)}
+    profile.update({10: 20.0})
+    rows = {row: None for row in range(0, 11)}
+    held = pk.hold_through_overshoot(profile, rows, 10, 0.0, 100.0)
+    assert held[10] == 20.0, held
