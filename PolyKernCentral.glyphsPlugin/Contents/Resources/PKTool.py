@@ -48,7 +48,7 @@ from Foundation import NSMakeSize  # to size the toolbar icon
 
 from typing import Self
 
-from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
+from PKCommonLogic import getFinalBubble, tempToUserNodeX, show_alert, log, isReferenceValid, isMirrored, isStale, needsGenerating, isAuto, isBlankWall, recordBox, shiftBubbleForSpacing, MIRROR_TOKEN, AUTO_TOKEN
 import PKAutoBubble as auto
 import PKPreview as preview
 from PKGroupGrid import PKGroupGridView
@@ -1255,6 +1255,15 @@ class PolyKernTool(SelectTool):
 			for side in SIDES:
 				# A MADE-UP WALL IS NOT DRAWN ON A LAYER NOBODY IS EDITING.
 				if not active and bubbles.get(side.defaultKey, False):
+					continue
+				# AND NEVER ON A LAYER WITH NO INK IN IT. A space has no shape
+				# for a wall to follow, so what it carries is the made-up line
+				# from descender to ascender - and the seeding pass writes that
+				# line into userData, where the guard above cannot see it. Left
+				# drawn, every space in the tab stands a full-height rule beside
+				# the glyph being edited, in the colour of a wall somebody meant.
+				if not layer.shapes and isBlankWall(
+						layer.userData[side.key('Nodes')] or ()):
 					continue
 				side.color().colorWithAlphaComponent_(0.5).set()
 				if isStale(layer, side.isLeft):
