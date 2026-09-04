@@ -194,3 +194,24 @@ def test_switching_it_where_it_already_is_writes_nothing(reporter, monkeypatch):
 			raising=False)
 	reporter.setShowing(True)
 	assert not written
+
+
+# --- Choosing them by hand ---------------------------------------------------
+
+
+def test_the_menu_names_the_glyph_it_would_edit(reporter, monkeypatch):
+	_withDefaults(reporter, monkeypatch, visible=['PolyKernPairs'])
+	layer = Layer('A', 700)
+	monkeypatch.setattr(reporter, 'currentLayer', lambda: (None, layer),
+			raising=False)
+	items = reporter.conditionalContextMenus()
+	assert len(items) == 1
+	assert 'A' in items[0]['name'], items[0]['name']
+	assert items[0]['action'] == 'editPairs:'
+
+
+def test_the_menu_says_nothing_while_the_row_is_off(reporter, monkeypatch):
+	"""That menu is shared by everything, and a control for something you
+	cannot see is only in the way."""
+	_withDefaults(reporter, monkeypatch, visible=[])
+	assert reporter.conditionalContextMenus() == []

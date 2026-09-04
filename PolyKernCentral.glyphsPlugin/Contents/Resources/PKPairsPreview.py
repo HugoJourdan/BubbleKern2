@@ -21,6 +21,8 @@ plugin that offers a preview, with the one showing filled in. See that module.
 import objc
 import traceback
 
+import vanilla
+
 from AppKit import (
 	NSAffineTransform,
 	NSBezierPath,
@@ -467,6 +469,74 @@ class PolyKernPairs(ReporterPlugin):
 			context.restoreGraphicsState()
 		except Exception:
 			log(f'PolyKernPairs drawGlyph error: {traceback.format_exc()}', error=True)
+
+	# ------------------------------------------------- choosing them by hand
+
+	@objc.python_method
+	def conditionalContextMenus(self):
+		"""What the edit view's context menu is given while the row is on.
+
+		NOTHING AT ALL WHEN IT IS OFF: that menu is shared by everything, and a
+		control for something you cannot see is only in the way.
+
+		THE GLYPH IS IN THE TITLE because the list is per glyph, and a menu
+		item that did not say which one would be a question every time.
+		"""
+		if not self.showing():
+			return []
+		_font, layer = self.currentLayer()
+		if layer is None:
+			return []
+		return [{
+			'name': Glyphs.localize({
+				'en': 'PolyKern Pairs for %s\u2026' % layer.parent.name}),
+			'action': 'editPairs:',
+		}]
+
+	def editPairs_(self, sender):
+		"""A field for the letters this glyph should be shown beside.
+
+		PREFILLED WITH WHAT IS STORED AND PLACEHOLDERED WITH WHAT IS NOT: the
+		grey line under an empty field is the ranking's own answer, so what
+		emptying the field gives back is on screen while you empty it.
+		"""
+		try:
+			font, layer = self.currentLayer()
+			if layer is None:
+				return
+			glyph = layer.parent
+			self._editing = glyph
+			stored = glyph.userData[pairs.PAIRS_KEY] or ''
+			self.pairsW = window = vanilla.Window((320, 116), 'PolyKern Pairs')
+			window.caption = vanilla.TextBox((15, 12, -15, 30),
+				'Letters to show %s beside, as names or as themselves. Empty for '
+				'the ones it turns up beside most.' % glyph.name, sizeStyle='small')
+			window.field = vanilla.EditText((15, 54, -15, 22), stored,
+				placeholder=pairs.automaticSummary(glyph.name, self.namesTable(font)))
+			window.cancel = vanilla.Button((-175, 84, 75, 20), 'Cancel',
+				callback=self.closePairs)
+			window.ok = vanilla.Button((-90, 84, 75, 20), 'OK',
+				callback=self.savePairs)
+			window.setDefaultButton(window.ok)
+			window.open()
+		except Exception:
+			log(f'PolyKernPairs editPairs error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def savePairs(self, sender=None):
+		try:
+			pairs.storePartners(self._editing, self.pairsW.field.get())
+			self.closePairs()
+			Glyphs.redraw()
+		except Exception:
+			log(f'PolyKernPairs savePairs error: {traceback.format_exc()}', error=True)
+
+	@objc.python_method
+	def closePairs(self, sender=None):
+		try:
+			self.pairsW.close()
+		except Exception:
+			pass
 
 	@objc.python_method
 	def __file__(self):

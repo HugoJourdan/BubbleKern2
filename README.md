@@ -33,8 +33,9 @@ It’s a work in progress and purposefully unavailable on Plugin Manager for now
 - Stale bubbles: a bubble is flagged when the outline has moved under it, and follows a sidebearing change on its own.
 - Info section: each side’s reference field and auto-generate button, and the selected node’s X and Y, sit beside GlyphsApp’s own info box.
 - Live kerning: the kern value against the neighbours is shown, and kept up to date, while a bubble node is dragged.
+- PolyKern Pairs: switch it on in the View menu and the preview panel shows the glyph you are editing beside the letters it actually turns up beside — kerned by its own walls, so the row answers as you move a node. The letters come from the same ranked pair list the kerner uses; right-click the edit view to type your own for a glyph.
 - Kerning groups: the Kerner can write groups rather than flat pairs, and can be narrowed to the pairs that actually occur in text.
-- Tests: 177 tests covering the parts that are pure Python, run without GlyphsApp.
+- Tests: 371 tests covering the parts that are pure Python, run without GlyphsApp.
 
 ## Test files
 In the *Demo files* folder:

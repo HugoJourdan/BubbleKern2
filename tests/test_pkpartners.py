@@ -122,10 +122,14 @@ def test_a_name_that_opens_with_a_dot_is_its_own_base():
 # --- A list typed by hand ---------------------------------------------------
 
 
-def test_nothing_stored_is_not_an_empty_list():
-	"""None sends the caller to the ranking; an empty list is an answer."""
+def test_nothing_stored_sends_the_caller_to_the_ranking():
 	assert pairs.chosenPartners(Glyph('A'), TABLE) is None
-	assert pairs.chosenPartners(Glyph('A', ''), TABLE) == []
+
+
+def test_nothing_but_spaces_is_nothing_stored():
+	"""Emptying the field is how somebody hands the glyph back to the list,
+	and it is the gesture they will reach for."""
+	assert pairs.chosenPartners(Glyph('A', '   '), TABLE) is None
 
 
 def test_a_stored_list_can_be_glyph_names():
@@ -162,8 +166,28 @@ def test_a_typed_list_replaces_both_sides(listed):
 	assert shown == [('T', 'A'), ('A', 'T')]
 
 
-def test_a_typed_empty_list_shows_nothing(listed):
-	assert pairs.pairsFor(Glyph('A', '  '), 'A', listed) == []
+def test_an_emptied_list_goes_back_to_the_ranking(listed):
+	shown = pairs.pairsFor(Glyph('A', '  '), 'A', listed, limit=1)
+	assert shown == [('V', 'A'), ('A', 'V')]
+
+
+# --- Keeping one ------------------------------------------------------------
+
+
+def test_a_typed_list_is_stored_as_it_was_typed():
+	glyph = Glyph('A')
+	assert pairs.storePartners(glyph, '  V  T ') == 'V T'
+	assert glyph.userData[pairs.PAIRS_KEY] == 'V T'
+
+
+def test_emptying_it_takes_the_key_out_of_the_file():
+	glyph = Glyph('A', 'V T')
+	assert pairs.storePartners(glyph, '') is None
+	assert pairs.PAIRS_KEY not in glyph.userData
+
+
+def test_the_placeholder_says_what_the_ranking_would_show(listed):
+	assert pairs.automaticSummary('A', listed, limit=2) == 'V n v'
 
 
 # --- The list that actually ships -------------------------------------------

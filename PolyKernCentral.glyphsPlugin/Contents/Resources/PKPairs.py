@@ -97,9 +97,9 @@ def partners(name, namesByCharacter, limit=PARTNER_LIMIT):
 def chosenPartners(glyph, namesByCharacter=None):
 	"""The partners somebody typed for this glyph. -> [names], or None
 
-	None when nothing is stored, which is what tells a caller to go and ask the
-	list. A stored list that turns out to be empty is an ANSWER - "show me
-	nothing for this one" - and comes back as an empty list, not as None.
+	None when nothing is stored, which is what sends a caller to the ranking.
+	NOTHING BUT SPACES IS NOTHING STORED: emptying the field is how somebody
+	hands the glyph back to the list, and it is the gesture they will reach for.
 
 	WRITTEN IN WHATEVER IS QUICKEST TO TYPE: glyph names, or the characters
 	themselves. `V T o` and `VTo` mean the same six pairs, which is why the
@@ -126,7 +126,7 @@ def chosenPartners(glyph, namesByCharacter=None):
 		for one in found:
 			if one not in names:
 				names.append(one)
-	return names
+	return names or None
 
 
 def _resolve(word, namesByCharacter):
@@ -206,3 +206,36 @@ def placeRun(panel, total, ascender, descender, pad=SIDE_PAD, fill=PANEL_FILL):
 		return (scale, left, baseline)
 	except Exception:
 		return None
+
+
+def storePartners(glyph, typed):
+	"""Keep the partners somebody typed for this glyph. -> what was stored
+
+	EMPTY HANDS IT BACK TO THE LIST rather than storing an empty list: a field
+	cleared is somebody saying "never mind", not "show me nothing", and the
+	placeholder underneath it says what they get back.
+	"""
+	text = ' '.join((typed or '').split())
+	try:
+		if not text:
+			if glyph.userData[PAIRS_KEY] is not None:
+				del glyph.userData[PAIRS_KEY]
+			return None
+		glyph.userData[PAIRS_KEY] = text
+		return text
+	except Exception:
+		return None
+
+
+def automaticSummary(name, namesByCharacter, limit=PARTNER_LIMIT):
+	"""What the list would show for this glyph, as one line. -> str
+
+	The placeholder under the field: what somebody is about to override, and
+	what they get back by emptying it.
+	"""
+	before, after = partners(name, namesByCharacter, limit)
+	seen = []
+	for one in before + after:
+		if one not in seen:
+			seen.append(one)
+	return ' '.join(seen)
